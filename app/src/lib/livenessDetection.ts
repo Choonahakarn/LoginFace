@@ -61,18 +61,22 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
   // ตรวจสอบว่าเป็น mobile device หรือไม่
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
   
+  // บน mobile ใช้ CPU delegate เพราะ GPU อาจไม่ทำงานดี
+  // บน desktop ใช้ GPU delegate เพื่อความเร็ว
+  const delegate = isMobile ? 'CPU' : 'GPU';
+  
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: MODEL_URL,
-      delegate: 'GPU',
+      delegate: delegate,
     },
     outputFaceBlendshapes: false,
     runningMode: 'VIDEO',
     numFaces: 1,
     // Mobile: ลด confidence thresholds ลงมากเพื่อให้ตรวจจับได้ง่ายขึ้น
-    minFaceDetectionConfidence: isMobile ? 0.25 : 0.4,
-    minFacePresenceConfidence: isMobile ? 0.25 : 0.4,
-    minTrackingConfidence: isMobile ? 0.25 : 0.4,
+    minFaceDetectionConfidence: isMobile ? 0.2 : 0.4,
+    minFacePresenceConfidence: isMobile ? 0.2 : 0.4,
+    minTrackingConfidence: isMobile ? 0.2 : 0.4,
   });
   
   return faceLandmarker;
@@ -412,19 +416,44 @@ export async function detectLiveness(
     
     let result;
     try {
+      // ตรวจสอบว่า video มีขนาดจริงๆ ก่อนเรียก detectForVideo
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        return {
+          passed: false,
+          confidence: 0,
+          reasons: ['⏳ กำลังโหลดวิดีโอ... กรุณารอสักครู่'],
+          blinkDetected: false,
+          headMovementDetected: false,
+          textureAnalysisPassed: false,
+        };
+      }
+      
       result = faceLandmarker.detectForVideo(video, timestamp);
     } catch (detectError) {
       console.error('[detectLiveness] detectForVideo failed:', detectError);
-      throw new Error(`Face detection failed: ${detectError instanceof Error ? detectError.message : 'Unknown error'}`);
+      // บน mobile อาจเกิด error บ่อยกว่า - ให้ fallback ที่ดีขึ้น
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+      return {
+        passed: false,
+        confidence: 0,
+        reasons: [isMobile 
+          ? '⏳ เกิดข้อผิดพลาดในการตรวจจับ - กรุณาลองปิดและเปิดกล้องใหม่' 
+          : '⏳ เกิดข้อผิดพลาดในการตรวจจับ'],
+        blinkDetected: false,
+        headMovementDetected: false,
+        textureAnalysisPassed: false,
+      };
     }
     
     if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
       // ไม่พบ landmarks - อาจเป็นเพราะใบหน้าไม่อยู่ในเฟรม หรือแสงไม่พอ
-      // ไม่แสดง error ทันที - ให้โอกาสหลายเฟรมก่อน
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       return {
         passed: false,
         confidence: 0,
-        reasons: ['⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
+        reasons: [isMobile 
+          ? '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง อยู่ที่แสงสว่างพอ และอยู่ห่างจากกล้องประมาณ 30-50 ซม.' 
+          : '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
         blinkDetected: false,
         headMovementDetected: false,
         textureAnalysisPassed: false,

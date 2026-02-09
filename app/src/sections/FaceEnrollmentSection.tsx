@@ -665,7 +665,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                       onClick={switchCamera} 
                       variant="outline" 
                       size="lg"
-                      disabled={!isCameraActive || isCapturing}
+                      disabled={isCapturing}
                       className="w-full sm:w-auto border-purple-300 text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                       title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
                     >

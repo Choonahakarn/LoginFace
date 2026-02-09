@@ -116,14 +116,14 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
   const rightEAR = calculateEAR(landmarks, RIGHT_EYE_POINTS);
   const avgEAR = (leftEAR + rightEAR) / 2;
   
-  // สมดุล: จับการกระพริบได้ง่าย แต่ยังบังคับทั้งสองตาปิด (กันรูปภาพ)
-  const EAR_THRESHOLD_CLOSED = 0.18;  // ตาปิด (ผ่อนให้จับได้ง่ายขึ้น)
-  const EAR_THRESHOLD_OPEN = 0.22;    // ตาเปิด (ผ่อนให้จับได้ง่ายขึ้น)
+  // เข้มงวด: บังคับให้กระพริบตาชัดเจน (กันรูปภาพ)
+  const EAR_THRESHOLD_CLOSED = 0.16;  // ตาปิด (เข้มงวดขึ้น — รูปภาพกระพริบไม่ได้)
+  const EAR_THRESHOLD_OPEN = 0.24;    // ตาเปิด (เข้มงวดขึ้น)
   
-  if (landmarksHistory.length < 2) return false; // ต้องมีอย่างน้อย 2 เฟรม
+  if (landmarksHistory.length < 3) return false; // ต้องมีอย่างน้อย 3 เฟรม (เข้มงวดขึ้น)
   
-  // ดู 15 เฟรมล่าสุด — เพียงพอสำหรับการตรวจสอบ
-  const recentEARs = landmarksHistory.slice(-15).map(h => {
+  // ดู 20 เฟรมล่าสุด — เพิ่มเพื่อจับการกระพริบได้ดีขึ้น
+  const recentEARs = landmarksHistory.slice(-20).map(h => {
     const left = calculateEAR(h.landmarks, LEFT_EYE_POINTS);
     const right = calculateEAR(h.landmarks, RIGHT_EYE_POINTS);
     const avg = (left + right) / 2;
@@ -131,30 +131,25 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
       avg,
       left,
       right,
-      // ต้องทั้งสองตาปิดพร้อมกัน — กันรูปภาพ
+      // ต้องทั้งสองตาปิดพร้อมกัน — กันรูปภาพ (เข้มงวด)
       bothClosed: left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED,
-      // รับได้ถ้าค่าเฉลี่ยต่ำชัดเจน (ผ่อนให้จับได้ง่ายขึ้น)
-      clearlyClosed: avg < 0.19 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED),
+      // ต้องตาปิดชัดเจนมาก (เข้มงวด)
+      clearlyClosed: avg < 0.17 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED),
     };
   });
   
-  // Pattern: รับได้หลายรูปแบบ — ผ่านเร็ว (แต่ยังบังคับทั้งสองตาปิด)
-  for (let i = 0; i < recentEARs.length - 1; i++) {
+  // Pattern: บังคับให้มี pattern "เปิด -> ปิด -> เปิด" (เข้มงวด)
+  for (let i = 1; i < recentEARs.length - 1; i++) {
+    const prev = recentEARs[i - 1];
     const curr = recentEARs[i];
     const next = recentEARs[i + 1];
+    const openPrev = prev.avg > EAR_THRESHOLD_OPEN;
     const openNext = next.avg > EAR_THRESHOLD_OPEN;
     
-    // Pattern 1: ปิด (ทั้งสองตา) -> เปิด (รับได้ — เร็ว)
-    if (curr.bothClosed && openNext) return true;
-    // Pattern 2: ปิด (ชัดเจน) -> เปิด (รับได้)
-    if (curr.clearlyClosed && openNext) return true;
-    // Pattern 3: เปิด -> ปิด (ทั้งสองตา) -> เปิด (ดีที่สุด)
-    if (i > 0) {
-      const prev = recentEARs[i - 1];
-      const openPrev = prev.avg > EAR_THRESHOLD_OPEN;
-      if (openPrev && curr.bothClosed && openNext) return true;
-      if (openPrev && curr.clearlyClosed && openNext) return true;
-    }
+    // Pattern: เปิด -> ปิด (ทั้งสองตา) -> เปิด (บังคับ pattern นี้)
+    if (openPrev && curr.bothClosed && openNext) return true;
+    // หรือถ้าตาปิดชัดเจนมาก
+    if (openPrev && curr.clearlyClosed && openNext) return true;
   }
   return false;
 }
@@ -336,19 +331,18 @@ function analyzeTexture(
   // - Higher edge density (more details)
   // - Higher local variance (more depth variation)
   // เข้มงวดมาก: กันรูปภาพทุกประเภท (นิ่ง, เอียง, เปลี่ยนมุมแสง)
-  const VARIANCE_THRESHOLD = 280;  // เข้มงวดมาก — รูปภาพมักมี variance ต่ำกว่า
-  const EDGE_DENSITY_THRESHOLD = 0.16;  // เข้มงวดมาก — รูปภาพมักมี edge น้อยกว่า
-  const LOCAL_VARIANCE_THRESHOLD = 165;  // เข้มงวดมาก — รูปภาพมักมี local variance ต่ำกว่า
+  const VARIANCE_THRESHOLD = 300;  // เข้มงวดขึ้น — รูปภาพมักมี variance ต่ำกว่า
+  const EDGE_DENSITY_THRESHOLD = 0.18;  // เข้มงวดขึ้น — รูปภาพมักมี edge น้อยกว่า
+  const LOCAL_VARIANCE_THRESHOLD = 175;  // เข้มงวดขึ้น — รูปภาพมักมี local variance ต่ำกว่า
   
   const variancePass = variance > VARIANCE_THRESHOLD;
   const edgePass = edgeDensity > EDGE_DENSITY_THRESHOLD;
   const localVariancePass = avgLocalVariance > LOCAL_VARIANCE_THRESHOLD;
   
-  // เข้มงวดมาก: ต้องผ่านอย่างน้อย 2 ใน 3 การตรวจสอบ (แต่ threshold สูงขึ้น)
-  // หรือถ้าผ่านแค่ 1/3 แต่ผ่าน variance (สำคัญที่สุด) ก็ให้ผ่านได้
+  // เข้มงวดมาก: ต้องผ่านอย่างน้อย 2 ใน 3 การตรวจสอบ (บังคับ)
   const checksPassed = [variancePass, edgePass, localVariancePass].filter(Boolean).length;
-  // ต้องผ่านอย่างน้อย 2/3 หรือผ่าน variance (สำคัญที่สุด)
-  return checksPassed >= 2 || (checksPassed >= 1 && variancePass);
+  // ต้องผ่านอย่างน้อย 2/3 (บังคับ — ไม่ยืดหยุ่น)
+  return checksPassed >= 2;
 }
 
 /**
@@ -437,12 +431,12 @@ export async function detectLiveness(
     // อัปเดต frame history แบบเบาทุกเฟรม (สำหรับบล็อกรูปนิ่ง)
     pushFrameHistoryLight(video, faceBox);
     
-    // บล็อกรูปภาพนิ่ง/รูปในมือถือทันที — ผ่อนเกณฑ์เพื่อความเร็ว
+    // บล็อกรูปภาพนิ่ง/รูปในมือถือทันที — เข้มงวดขึ้น
     if (frameHistory.length >= 2) {
       const uniqueHashes = new Set(frameHistory.map(f => f.frameHash));
       const uniqueHashRatio = uniqueHashes.size / frameHistory.length;
-      // ผ่อนเกณฑ์: รูปภาพนิ่งจะมี hash เหมือนกันเกือบทุกเฟรม
-      if (uniqueHashes.size <= 1 || uniqueHashRatio < 0.5) {
+      // เข้มงวด: รูปภาพนิ่งจะมี hash เหมือนกันเกือบทุกเฟรม
+      if (uniqueHashes.size <= 1 || uniqueHashRatio < 0.6) {
         return {
           passed: false,
           confidence: 0,
@@ -815,16 +809,16 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   // 3. variance เปลี่ยนแปลงแบบกระตุก (coefficient สูง)
   // 4. การเปลี่ยนแปลงไม่ต่อเนื่อง
   
-  // ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังกันรูปภาพนิ่ง
-  const hashVariationPass = variationRatio > 0.40; // ผ่อนให้เร็วขึ้น — รูปภาพนิ่งมี hash เปลี่ยนน้อยมาก
-  const varianceVariationPass = varianceCoefficient > 0.12; // ผ่อนให้เร็วขึ้น — รูปภาพมี variance คงที่
-  const varianceStdDevPass = varianceStdDev > 15; // ผ่อนให้เร็วขึ้น — รูปภาพมี variance std dev ต่ำ
+  // เข้มงวด: บังคับให้มีการเปลี่ยนแปลงมาก (กันรูปภาพ)
+  const hashVariationPass = variationRatio > 0.55; // เข้มงวดขึ้น — รูปภาพนิ่งมี hash เปลี่ยนน้อยมาก
+  const varianceVariationPass = varianceCoefficient > 0.18; // เข้มงวดขึ้น — รูปภาพมี variance คงที่
+  const varianceStdDevPass = varianceStdDev > 20; // เข้มงวดขึ้น — รูปภาพมี variance std dev ต่ำ
   const smoothChangePass = isSmoothVarianceChange; // ต้องเป็นการเปลี่ยนแปลงแบบต่อเนื่อง
   
-  // ผ่อนเกณฑ์: ต้องผ่านอย่างน้อย 2/4 (แต่ยังกันรูปภาพนิ่ง)
+  // เข้มงวด: ต้องผ่านอย่างน้อย 3/4 (กันรูปภาพทุกประเภท)
   const checksPassed = [hashVariationPass, varianceVariationPass, varianceStdDevPass, smoothChangePass].filter(Boolean).length;
-  // ต้องผ่านอย่างน้อย 2/4 และต้องผ่าน hashVariation (สำคัญที่สุดสำหรับรูปภาพนิ่ง)
-  return checksPassed >= 2 && hashVariationPass; // ผ่อนให้เร็วขึ้น — ต้องผ่าน 2/4 และ hashVariation
+  // ต้องผ่านอย่างน้อย 3/4 และต้องผ่าน hashVariation (สำคัญที่สุดสำหรับรูปภาพนิ่ง)
+  return checksPassed >= 3 && hashVariationPass; // เข้มงวด — ต้องผ่าน 3/4 และ hashVariation
 }
 
 /**

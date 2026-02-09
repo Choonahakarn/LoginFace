@@ -17,8 +17,9 @@ export async function loadMediaPipeFaceDetector(): Promise<FaceDetector> {
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
   await detector.setOptions({
     runningMode: 'VIDEO',
-    minDetectionConfidence: isMobile ? 0.25 : 0.3, // Mobile: ลดลงเพื่อให้ตรวจจับได้ง่ายขึ้น
+    minDetectionConfidence: isMobile ? 0.2 : 0.3, // Mobile: ลดลงอีกเพื่อให้ตรวจจับได้ง่ายขึ้น
   });
+  console.log('[FaceDetector] Loaded with minDetectionConfidence:', isMobile ? 0.2 : 0.3);
   return detector;
 }
 

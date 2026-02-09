@@ -483,8 +483,25 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         detection = await detectFaceFromVideo(video, ts);
         if (detection) {
           lastFaceBoxRef.current = detection.box;
+          // Debug logging บน mobile
+          const isMobile = isMobileDevice || window.innerWidth <= 768;
+          if (isMobile) {
+            console.log('[performScan] Mobile: Face detected', {
+              box: detection.box,
+              videoSize: `${video.videoWidth}x${video.videoHeight}`,
+              readyState: video.readyState
+            });
+          }
         } else {
           lastFaceBoxRef.current = null;
+          // Debug logging บน mobile เมื่อไม่พบใบหน้า
+          const isMobile = isMobileDevice || window.innerWidth <= 768;
+          if (isMobile && detectorFrameCountRef.current % 30 === 0) { // Log ทุก 30 เฟรม
+            console.warn('[performScan] Mobile: No face detected', {
+              videoSize: `${video.videoWidth}x${video.videoHeight}`,
+              readyState: video.readyState
+            });
+          }
         }
       } else {
         // ใช้ face box จากเฟรมก่อนหน้า

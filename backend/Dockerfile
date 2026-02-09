@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
+# Create directory for DeepFace models (with proper permissions)
+RUN mkdir -p /app/.deepface && chmod 777 /app/.deepface
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
@@ -27,6 +30,7 @@ COPY . .
 # Set environment variables
 ENV QT_QPA_PLATFORM=offscreen
 ENV PYTHONUNBUFFERED=1
+ENV DEEPFACE_HOME=/app/.deepface
 
 # Expose port (Railway will set PORT automatically)
 EXPOSE 8000

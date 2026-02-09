@@ -927,7 +927,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     } finally {
       scanInProgressRef.current = false;
     }
-  }, [isCameraActive, scanCooldown, classStudents, getStudentStatusTodaySync, recordAttendance, isRealCameraStream, checkNotObviouslyStaticPhoto, classId, lateGraceMinutes]);
+  }, [isCameraActive, scanCooldown, classStudents, getStudentStatusTodaySync, recordAttendance, isRealCameraStream, checkNotObviouslyStaticPhoto, classId, lateGraceMinutes, isMobileDevice]);
 
   const clearLastResultPopup = useCallback(() => {
     if (lastResultRef.current) {

@@ -163,8 +163,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     const stabilityPx = skipMinSec ? 9999 : 44;
     const stabilitySizeRatio = skipMinSec ? 1 : 0.22;
     // หลัง Liveness: ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังกันรูปภาพนิ่ง
-    const minChangeToAllow = skipMinSec ? 1.0 : 3;  // หลัง Liveness: 1.0% (ผ่อนให้เร็วขึ้น)
-    const threshold = skipMinSec ? 3 : 6;  // หลัง Liveness: threshold ลดลง (ผ่อนให้เร็วขึ้น)
+    const minChangeToAllow = skipMinSec ? 0.8 : 3;  // หลัง Liveness: 0.8% (ผ่อนให้เร็วขึ้นมาก)
+    const threshold = skipMinSec ? 2 : 6;  // หลัง Liveness: threshold ลดลงมาก (ผ่อนให้เร็วขึ้นมาก)
     const minSecToDecide = skipMinSec ? 0 : 0.04;  // หลัง Liveness ไม่รอเวลา
 
     const boxToRect = (box: { x: number; y: number; width: number; height: number }) => {

@@ -117,8 +117,8 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
   const avgEAR = (leftEAR + rightEAR) / 2;
   
   // สมดุล: จับการกระพริบได้ง่าย แต่ยังบังคับทั้งสองตาปิด (กันรูปภาพ)
-  const EAR_THRESHOLD_CLOSED = 0.17;  // ตาปิด (ผ่อนให้จับได้ง่าย)
-  const EAR_THRESHOLD_OPEN = 0.23;    // ตาเปิด (ผ่อนให้จับได้ง่าย)
+  const EAR_THRESHOLD_CLOSED = 0.18;  // ตาปิด (ผ่อนให้จับได้ง่ายขึ้น)
+  const EAR_THRESHOLD_OPEN = 0.22;    // ตาเปิด (ผ่อนให้จับได้ง่ายขึ้น)
   
   if (landmarksHistory.length < 2) return false; // ต้องมีอย่างน้อย 2 เฟรม
   
@@ -133,8 +133,8 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
       right,
       // ต้องทั้งสองตาปิดพร้อมกัน — กันรูปภาพ
       bothClosed: left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED,
-      // รับได้ถ้าค่าเฉลี่ยต่ำชัดเจน (ผ่อนให้จับได้ง่าย)
-      clearlyClosed: avg < 0.18 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED),
+      // รับได้ถ้าค่าเฉลี่ยต่ำชัดเจน (ผ่อนให้จับได้ง่ายขึ้น)
+      clearlyClosed: avg < 0.19 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED),
     };
   });
   
@@ -224,13 +224,13 @@ function detectHeadMovement(): boolean {
   const movementCoefficient = movementStdDev / (avgMovement + 0.1);
   const isSmoothMovement = movementCoefficient < 1.3;
   
-  // ลด threshold เป็น 4 องศา — ขยับนิดเดียวใน 5 เฟรมก็ผ่าน (ใบหน้าจริง) รูปภาพเอียงจะกระตุก
-  const MOVEMENT_THRESHOLD = 4;
+  // ลด threshold เป็น 3 องศา — ขยับนิดเดียวก็ผ่าน (ใบหน้าจริง) รูปภาพเอียงจะกระตุก
+  const MOVEMENT_THRESHOLD = 3;
   const hasSignificantMovement =
     (yawDiff > MOVEMENT_THRESHOLD || pitchDiff > MOVEMENT_THRESHOLD || rollDiff > MOVEMENT_THRESHOLD) &&
     (yawDiffMid > MOVEMENT_THRESHOLD / 2 || pitchDiffMid > MOVEMENT_THRESHOLD / 2);
   
-  const hasContinuousMovement = avgMovement > 0.5 && isSmoothMovement;
+  const hasContinuousMovement = avgMovement > 0.3 && isSmoothMovement; // ลดจาก 0.5 เป็น 0.3
   return hasSignificantMovement && hasContinuousMovement;
 }
 
@@ -611,11 +611,24 @@ export async function detectLiveness(
     // ไม่ยืดหยุ่น — รูปภาพต้องถูกบล็อกเสมอ
     
     // รอ 2 เฟรม แล้วตัดสิน — ต้องมีข้อมูลพอสำหรับการตรวจสอบ
-    if (landmarksHistory.length < 2) {
+    // แต่ถ้า blink ผ่านแล้ว ให้ผ่านได้เลย (ไม่ต้องรอ head movement)
+    if (landmarksHistory.length < 2 && !blinkDetected) {
       return {
         passed: false,
         confidence: Math.max(0, confidence * 0.85),
         reasons: [...reasons, `⏳ กรุณากระพริบตาหนึ่งครั้ง (${landmarksHistory.length}/2)`],
+        blinkDetected,
+        headMovementDetected,
+        textureAnalysisPassed,
+      };
+    }
+    
+    // ถ้า blink ผ่านแล้วและมีข้อมูลพอ (2 frames) ให้ผ่านได้เลย
+    if (blinkDetected && landmarksHistory.length >= 2 && frameVariationPassed && textureAnalysisPassed) {
+      return {
+        passed: true,
+        confidence: Math.max(confidence, 0.85),
+        reasons: [...reasons, '✅ ตรวจพบการกระพริบตา — ใบหน้าจริง'],
         blinkDetected,
         headMovementDetected,
         textureAnalysisPassed,

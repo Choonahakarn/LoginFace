@@ -94,8 +94,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   const abortControllerRef = useRef<AbortController | null>(null);
   // Multi-frame verification: เก็บผลการจดจำหลายครั้งก่อนยืนยัน
   const recognitionHistoryRef = useRef<Array<{ studentId: string; similarity: number; timestamp: number }>>([]);
-  const REQUIRED_CONSISTENT_MATCHES = 2; // จดจำได้ 2 ครั้งติดต่อกัน — ป้องกันการจดจำผิดคน
-  const VERIFICATION_WINDOW_MS = 500; // เพิ่มเวลา window เพื่อให้มีโอกาสตรวจสอบหลายครั้ง
+  const REQUIRED_CONSISTENT_MATCHES = 1; // จดจำได้ 1 ครั้งก็ผ่าน — เพิ่มความเร็ว
+  const VERIFICATION_WINDOW_MS = 300; // ลดเวลา window เพื่อเพิ่มความเร็ว
   /** เก็บเวลาที่กด "เริ่มสแกน" — ภายใน X นาที = เข้าเรียนแล้ว เกิน X นาที = มาสาย (ตั้งค่าได้ต่อห้อง) */
   const scanStartTimeRef = useRef<number | null>(null);
   const faceCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -581,14 +581,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
               r => r.studentId === res.student_id
             );
             
-            // ต้องมีความมั่นใจสูงและจดจำได้เหมือนกันหลายครั้ง — ป้องกันการจดจำผิดคน
-            // เพิ่ม threshold เป็น 0.70 เพื่อป้องกันการจดจำผิดคนเมื่อใบหน้าคล้ายกัน
-            const MIN_SIMILARITY_THRESHOLD = 0.70; // เพิ่มจาก 0.65 เป็น 0.70
+            // ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังป้องกันการจดจำผิดคน
+            const MIN_SIMILARITY_THRESHOLD = 0.65; // ลดจาก 0.70 เป็น 0.65 เพื่อเพิ่มความเร็ว
             
             // ตรวจสอบว่า similarity สูงพอและจดจำได้เหมือนกันหลายครั้ง
             if (sameStudentMatches.length >= REQUIRED_CONSISTENT_MATCHES && res.similarity >= MIN_SIMILARITY_THRESHOLD) {
-              // ตรวจสอบเพิ่มเติม: ถ้า similarity ต่ำกว่า 0.75 ต้องจดจำได้อย่างน้อย 3 ครั้ง
-              const requiredMatches = res.similarity >= 0.75 ? REQUIRED_CONSISTENT_MATCHES : Math.max(REQUIRED_CONSISTENT_MATCHES, 3);
+              // ผ่อนเกณฑ์: ถ้า similarity ต่ำกว่า 0.75 ต้องจดจำได้อย่างน้อย 2 ครั้ง (ลดจาก 3)
+              const requiredMatches = res.similarity >= 0.75 ? REQUIRED_CONSISTENT_MATCHES : Math.max(REQUIRED_CONSISTENT_MATCHES, 2);
               
               if (sameStudentMatches.length >= requiredMatches) {
                 const student = classStudents.find((s) => String(s.id) === String(res.student_id));

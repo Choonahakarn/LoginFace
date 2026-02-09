@@ -321,10 +321,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         console.warn('Failed to load face landmarker:', err);
         // Continue without advanced liveness detection
       }
-      // ปรับ resolution ตาม device: mobile ใช้ 640x480 (เร็วและพอใช้), desktop ใช้ 1280x720
+      // ปรับ resolution ตาม device: mobile ใช้ 960x720 (เพิ่มขึ้นเพื่อให้ Face Landmarker ทำงานได้ดีขึ้น), desktop ใช้ 1280x720
       const isMobile = isMobileDevice || window.innerWidth <= 768;
       const videoConstraints = isMobile
-        ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse } // Mobile: ใช้ resolution ต่ำเพื่อความเร็วและให้ landmarker ทำงานได้ดีขึ้น
+        ? { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: facingModeToUse } // Mobile: เพิ่ม resolution เป็น 960x720 เพื่อให้ Face Landmarker ตรวจจับได้ดีขึ้น
         : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse };
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
@@ -342,19 +342,29 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
             const video = videoRef.current!;
             const onLoadedMetadata = () => {
               video.removeEventListener('loadedmetadata', onLoadedMetadata);
-              // รอเพิ่มอีก 200ms เพื่อให้ video พร้อมจริงๆ
+              // รอเพิ่มอีก 500ms เพื่อให้ video stream พร้อมจริงๆ (เพิ่มจาก 200ms)
               setTimeout(() => {
+                console.log('[startCamera] Mobile: Video ready', {
+                  videoSize: `${video.videoWidth}x${video.videoHeight}`,
+                  readyState: video.readyState,
+                  facingMode: facingModeToUse
+                });
                 setIsCameraActive(true);
                 resolve();
-              }, 200);
+              }, 500);
             };
             video.addEventListener('loadedmetadata', onLoadedMetadata);
-            // Timeout fallback (ถ้า event ไม่เกิด)
+            // Timeout fallback (ถ้า event ไม่เกิด) - เพิ่มเป็น 3000ms
             setTimeout(() => {
               video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              console.log('[startCamera] Mobile: Video ready (timeout fallback)', {
+                videoSize: `${video.videoWidth}x${video.videoHeight}`,
+                readyState: video.readyState,
+                facingMode: facingModeToUse
+              });
               setIsCameraActive(true);
               resolve();
-            }, 2000);
+            }, 3000);
           });
         } else {
           setIsCameraActive(true);

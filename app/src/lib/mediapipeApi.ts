@@ -17,9 +17,9 @@ export async function loadMediaPipeFaceDetector(): Promise<FaceDetector> {
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
   await detector.setOptions({
     runningMode: 'VIDEO',
-    minDetectionConfidence: isMobile ? 0.2 : 0.3, // Mobile: ลดลงอีกเพื่อให้ตรวจจับได้ง่ายขึ้น
+    minDetectionConfidence: isMobile ? 0.15 : 0.3, // Mobile: ลดลงเป็น 0.15 เพื่อให้ตรวจจับได้ง่ายขึ้น
   });
-  console.log('[FaceDetector] Loaded with minDetectionConfidence:', isMobile ? 0.2 : 0.3);
+  console.log('[FaceDetector] Loaded with minDetectionConfidence:', isMobile ? 0.15 : 0.3, 'isMobile:', isMobile);
   return detector;
 }
 
@@ -38,13 +38,45 @@ export async function detectFaceFromVideo(
   video: HTMLVideoElement,
   timestamp: number
 ): Promise<{ box: FaceBox } | null> {
-  if (!detector || video.readyState < 2 || video.videoWidth === 0) return null;
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  // บน mobile: ใช้ readyState >= 2 (HAVE_CURRENT_DATA) เพื่อให้เริ่ม scan ได้เร็วขึ้น
+  const minReadyState = 2;
+  
+  if (!detector || video.readyState < minReadyState || video.videoWidth === 0) {
+    if (isMobile && !detector) {
+      console.warn('[detectFaceFromVideo] Mobile: Detector not loaded');
+    }
+    return null;
+  }
+  
   try {
     const result = detector.detectForVideo(video, timestamp);
-    if (!result?.detections?.length) return null;
+    if (!result?.detections?.length) {
+      // Debug logging บน mobile เมื่อไม่พบใบหน้า (ทุก 30 เฟรม)
+      if (isMobile && Math.random() < 0.033) { // ~3% chance = ~ทุก 30 เฟรม
+        console.log('[detectFaceFromVideo] Mobile: No face detected', {
+          videoSize: `${video.videoWidth}x${video.videoHeight}`,
+          readyState: video.readyState,
+          hasResult: !!result,
+          detectionsCount: result?.detections?.length || 0
+        });
+      }
+      return null;
+    }
     const d = result.detections[0];
     const b = d.boundingBox;
     if (!b) return null;
+    
+    // Debug logging บน mobile เมื่อพบใบหน้า
+    if (isMobile && Math.random() < 0.1) { // ~10% chance
+      console.log('[detectFaceFromVideo] Mobile: Face detected', {
+        box: { x: b.originX ?? 0, y: b.originY ?? 0, width: b.width ?? 0, height: b.height ?? 0 },
+        videoSize: `${video.videoWidth}x${video.videoHeight}`,
+        readyState: video.readyState,
+        confidence: d.categories?.[0]?.score
+      });
+    }
+    
     return {
       box: {
         x: b.originX ?? 0,
@@ -53,7 +85,10 @@ export async function detectFaceFromVideo(
         height: b.height ?? 0,
       },
     };
-  } catch {
+  } catch (err) {
+    if (isMobile) {
+      console.warn('[detectFaceFromVideo] Mobile: Error:', err);
+    }
     return null;
   }
 }

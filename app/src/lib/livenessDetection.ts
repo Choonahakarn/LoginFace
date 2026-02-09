@@ -88,10 +88,10 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
       outputFaceBlendshapes: false,
       runningMode: 'VIDEO',
       numFaces: 1,
-      // Mobile: ลด confidence thresholds ลงมากมากเพื่อให้ตรวจจับได้ง่ายขึ้น (0.1 = ต่ำมากมาก)
-      minFaceDetectionConfidence: isMobile ? 0.1 : 0.4,
-      minFacePresenceConfidence: isMobile ? 0.1 : 0.4,
-      minTrackingConfidence: isMobile ? 0.1 : 0.4,
+      // Mobile: ลด confidence thresholds เพื่อให้ตรวจจับได้ง่ายขึ้น แต่ไม่ต่ำเกินไป (0.15 = สมดุลระหว่างความไวและความแม่นยำ)
+      minFaceDetectionConfidence: isMobile ? 0.15 : 0.4,
+      minFacePresenceConfidence: isMobile ? 0.15 : 0.4,
+      minTrackingConfidence: isMobile ? 0.15 : 0.4,
     });
     console.log('[FaceLandmarker] Loaded successfully with', delegate, 'delegate');
   } catch (gpuError) {
@@ -430,9 +430,9 @@ export async function detectLiveness(
     // ตรวจสอบว่าเป็น mobile device หรือไม่
     const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
     
-    // บน mobile: รอให้ video พร้อมมากขึ้น (readyState >= 3 = HAVE_FUTURE_DATA)
+    // บน mobile: ใช้ readyState >= 2 (HAVE_CURRENT_DATA) เพื่อให้เริ่ม scan ได้เร็วขึ้น
     // บน desktop: readyState >= 2 ก็พอ
-    const minReadyState = isMobile ? 3 : 2;
+    const minReadyState = 2; // ลดจาก 3 เป็น 2 เพื่อให้ mobile เริ่ม scan ได้เร็วขึ้น
     
     if (video.readyState < minReadyState) {
       return {
@@ -458,7 +458,8 @@ export async function detectLiveness(
     }
     
     // บน mobile: ตรวจสอบว่า video มีขนาดที่เหมาะสม (ไม่ควรเป็น 0)
-    if (isMobile && (video.videoWidth < 100 || video.videoHeight < 100)) {
+    // ลด threshold จาก 100 เป็น 50 เพื่อให้เริ่ม scan ได้เร็วขึ้น
+    if (isMobile && (video.videoWidth < 50 || video.videoHeight < 50)) {
       return {
         passed: false,
         confidence: 0,

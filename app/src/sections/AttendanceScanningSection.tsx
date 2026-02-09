@@ -321,10 +321,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         console.warn('Failed to load face landmarker:', err);
         // Continue without advanced liveness detection
       }
-      // ปรับ resolution ตาม device: mobile ใช้ 1280x720 เพื่อให้ face landmarker ตรวจจับได้ดีขึ้น, desktop ใช้ 1280x720
+      // ปรับ resolution ตาม device: mobile ใช้ 640x480 (เร็วและพอใช้), desktop ใช้ 1280x720
       const isMobile = isMobileDevice || window.innerWidth <= 768;
       const videoConstraints = isMobile
-        ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse } // เพิ่ม resolution สำหรับ mobile เพื่อให้ landmarker ตรวจจับได้ดีขึ้น
+        ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse } // Mobile: ใช้ resolution ต่ำเพื่อความเร็ว แต่ landmarker จะใช้ threshold ต่ำกว่า
         : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse };
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,

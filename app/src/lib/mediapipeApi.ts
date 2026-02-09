@@ -13,9 +13,11 @@ export async function loadMediaPipeFaceDetector(): Promise<FaceDetector> {
   if (detector) return detector;
   const vision = await FilesetResolver.forVisionTasks(WASM_URL);
   detector = await FaceDetector.createFromModelPath(vision, MODEL_URL);
+  // ตรวจสอบว่าเป็น mobile device หรือไม่
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
   await detector.setOptions({
     runningMode: 'VIDEO',
-    minDetectionConfidence: 0.3, // ลดเพื่อเพิ่มความเร็ว (ยังแม่นยำ)
+    minDetectionConfidence: isMobile ? 0.25 : 0.3, // Mobile: ลดลงเพื่อให้ตรวจจับได้ง่ายขึ้น
   });
   return detector;
 }

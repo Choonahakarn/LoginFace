@@ -69,10 +69,10 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
     outputFaceBlendshapes: false,
     runningMode: 'VIDEO',
     numFaces: 1,
-    // Mobile: ลด confidence thresholds เพื่อให้ตรวจจับได้ง่ายขึ้น
-    minFaceDetectionConfidence: isMobile ? 0.3 : 0.4,
-    minFacePresenceConfidence: isMobile ? 0.3 : 0.4,
-    minTrackingConfidence: isMobile ? 0.3 : 0.4,
+    // Mobile: ลด confidence thresholds ลงมากเพื่อให้ตรวจจับได้ง่ายขึ้น
+    minFaceDetectionConfidence: isMobile ? 0.25 : 0.4,
+    minFacePresenceConfidence: isMobile ? 0.25 : 0.4,
+    minTrackingConfidence: isMobile ? 0.25 : 0.4,
   });
   
   return faceLandmarker;
@@ -386,7 +386,20 @@ export async function detectLiveness(
     }
     
     // รอให้ video พร้อม - mobile อาจใช้เวลานานกว่า
-    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+    // ตรวจสอบ readyState >= 2 (HAVE_CURRENT_DATA) และมีขนาด video
+    if (video.readyState < 2) {
+      return {
+        passed: false,
+        confidence: 0,
+        reasons: ['⏳ กำลังโหลดวิดีโอ... กรุณารอสักครู่'],
+        blinkDetected: false,
+        headMovementDetected: false,
+        textureAnalysisPassed: false,
+      };
+    }
+    
+    // ตรวจสอบว่ามีขนาด video หรือไม่ (อาจเป็น 0 ในบางกรณี)
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
       return {
         passed: false,
         confidence: 0,
@@ -406,14 +419,12 @@ export async function detectLiveness(
     }
     
     if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
-      // บน mobile อาจต้องใช้เวลามากขึ้นในการตรวจจับ - ให้ข้อความที่ชัดเจนขึ้น
-      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+      // ไม่พบ landmarks - อาจเป็นเพราะใบหน้าไม่อยู่ในเฟรม หรือแสงไม่พอ
+      // ไม่แสดง error ทันที - ให้โอกาสหลายเฟรมก่อน
       return {
         passed: false,
         confidence: 0,
-        reasons: [isMobile 
-          ? '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง อยู่ที่แสงสว่างพอ และอยู่ห่างจากกล้องพอดี' 
-          : '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
+        reasons: ['⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
         blinkDetected: false,
         headMovementDetected: false,
         textureAnalysisPassed: false,

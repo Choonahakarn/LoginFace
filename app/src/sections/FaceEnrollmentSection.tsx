@@ -644,11 +644,11 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   )}
 
                   {/* Controls */}
-                  <div className="flex justify-center gap-4 flex-wrap">
+                  <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
                     <Button 
                       onClick={captureFace} 
                       size="lg"
-                      className="bg-green-600 hover:bg-green-700"
+                      className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
                       disabled={!isCameraActive || isCapturing}
                     >
                       {isCapturing ? (
@@ -656,7 +656,8 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                       ) : (
                         <>
                           <Camera className="w-5 h-5 mr-2" />
-                          บันทึกใบหน้า (3D)
+                          <span className="hidden sm:inline">บันทึกใบหน้า (3D)</span>
+                          <span className="sm:hidden">บันทึก</span>
                         </>
                       )}
                     </Button>
@@ -665,7 +666,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                       variant="outline" 
                       size="lg"
                       disabled={!isCameraActive || isCapturing}
-                      className="border-purple-300 text-purple-600 hover:bg-purple-50"
+                      className="w-full sm:w-auto border-purple-300 text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                       title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
                     >
                       <FlipHorizontal className="w-5 h-5 mr-2" />

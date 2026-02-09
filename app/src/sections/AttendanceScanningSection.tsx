@@ -1221,9 +1221,9 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                   <p className="text-center text-sm text-gray-600">
                     กำลังสแกนเช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
-                  <div className="flex justify-center gap-4 flex-wrap">
+                  <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
                   {!isCameraActive ? (
-                    <Button onClick={startCamera} size="lg">
+                    <Button onClick={startCamera} size="lg" className="w-full sm:w-auto">
                       <Camera className="w-5 h-5 mr-2" />
                       เปิดกล้อง
                     </Button>
@@ -1232,7 +1232,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                       <Button 
                         onClick={toggleScanning} 
                         size="lg"
-                        className={isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}
+                        className={`w-full sm:w-auto ${isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
                       >
                         {isScanning ? (
                           <>
@@ -1251,7 +1251,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                         variant="outline" 
                         size="lg"
                         disabled={!isCameraActive || isScanning}
-                        className="border-purple-300 text-purple-600 hover:bg-purple-50"
+                        className="w-full sm:w-auto border-purple-300 text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                         title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
                       >
                         <FlipHorizontal className="w-5 h-5 mr-2" />
@@ -1262,12 +1262,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                         variant="outline" 
                         size="lg"
                         disabled={!isCameraActive}
-                        className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                        className="w-full sm:w-auto border-blue-300 text-blue-600 hover:bg-blue-50"
                       >
                         <Maximize2 className="w-5 h-5 mr-2" />
-                        ขยายเต็มจอ
+                        <span className="hidden sm:inline">ขยายเต็มจอ</span>
+                        <span className="sm:hidden">เต็มจอ</span>
                       </Button>
-                      <Button onClick={stopCamera} variant="outline" size="lg">
+                      <Button onClick={stopCamera} variant="outline" size="lg" className="w-full sm:w-auto">
                         ปิดกล้อง
                       </Button>
                     </>

@@ -28,12 +28,25 @@ def _ensure_embedding_model():
     global _embedding_model_loaded
     if not _embedding_model_loaded:
         from deepface import DeepFace
-        DeepFace.represent(
-            np.zeros((MIN_FACE_SIZE, MIN_FACE_SIZE, 3), dtype=np.uint8),
-            model_name="Facenet512",
-            enforce_detection=False,
-        )
-        _embedding_model_loaded = True
+        import os
+        try:
+            # ตั้งค่า model path เพื่อหลีกเลี่ยงปัญหา permissions
+            cache_dir = os.getenv("DEEPFACE_HOME", os.path.expanduser("~/.deepface"))
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            # Pre-load model ด้วย enforce_detection=False เพื่อหลีกเลี่ยง detector issues
+            DeepFace.represent(
+                np.zeros((MIN_FACE_SIZE, MIN_FACE_SIZE, 3), dtype=np.uint8),
+                model_name="Facenet512",
+                enforce_detection=False,
+                align=False,
+                prog_bar=False,
+            )
+            _embedding_model_loaded = True
+        except Exception as e:
+            logger.warning(f"Failed to pre-load embedding model: {e}")
+            # ยังคงตั้งค่าเป็น loaded เพื่อไม่ให้ retry ซ้ำๆ
+            _embedding_model_loaded = True
 
 
 def _prepare_for_embedding(img: np.ndarray) -> np.ndarray:

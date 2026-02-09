@@ -54,6 +54,33 @@ const MAX_HISTORY = 25; // เก็บแค่ 25 frames เพื่อคว
 let frameHistory: Array<{ timestamp: number; frameHash: string }> = []; // เก็บ hash ของ frame เพื่อตรวจสอบการเปลี่ยนแปลง
 let framePixelHistory: Array<{ timestamp: number; pixelVariance: number }> = []; // เก็บ variance ของ pixel เพื่อตรวจสอบการเปลี่ยนแปลง
 
+/** บน mobile: วาดเฉพาะบริเวณใบหน้า (face crop) ลง canvas เพื่อส่งให้ Face Landmarker — ใบหน้าใหญ่ขึ้นในเฟรม จับ landmarks ได้ง่ายขึ้น */
+const FACE_CROP_CANVAS_SIZE = 256;
+let faceCropCanvas: HTMLCanvasElement | null = null;
+
+function drawFaceCropToCanvas(
+  video: HTMLVideoElement,
+  faceBox: { x: number; y: number; width: number; height: number }
+): HTMLCanvasElement {
+  if (!faceCropCanvas) {
+    faceCropCanvas = document.createElement('canvas');
+    faceCropCanvas.width = FACE_CROP_CANVAS_SIZE;
+    faceCropCanvas.height = FACE_CROP_CANVAS_SIZE;
+  }
+  const pad = 0.35; // ขยายกรอบใบหน้า 35% เพื่อให้มีบริบท (คิ้ว คาง)
+  const sx = Math.max(0, faceBox.x - faceBox.width * pad);
+  const sy = Math.max(0, faceBox.y - faceBox.height * pad);
+  const sw = Math.min(video.videoWidth - sx, faceBox.width * (1 + 2 * pad));
+  const sh = Math.min(video.videoHeight - sy, faceBox.height * (1 + 2 * pad));
+  if (sw <= 0 || sh <= 0) {
+    return faceCropCanvas;
+  }
+  const ctx = faceCropCanvas.getContext('2d');
+  if (!ctx) return faceCropCanvas;
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, FACE_CROP_CANVAS_SIZE, FACE_CROP_CANVAS_SIZE);
+  return faceCropCanvas;
+}
+
 export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
   if (faceLandmarker) return faceLandmarker;
   
@@ -61,22 +88,12 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
   // ตรวจสอบว่าเป็น mobile device หรือไม่
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
   
-  // บน mobile: ลองใช้ GPU delegate ก่อน (ถ้า browser รองรับ WebGL)
-  // ถ้า GPU ไม่ทำงานดี จะ fallback เป็น CPU
+  // บน mobile: ใช้ CPU delegate ก่อน (มักเสถียรกว่าและจับ landmarks ได้ดีกว่าบนมือถือ)
   let delegate: 'CPU' | 'GPU' = 'CPU';
-  if (isMobile) {
-    // ตรวจสอบว่า browser รองรับ WebGL หรือไม่
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-    if (gl) {
-      // Browser รองรับ WebGL - ลองใช้ GPU
-      delegate = 'GPU';
-      console.log('[FaceLandmarker] Mobile: Using GPU delegate (WebGL supported)');
-    } else {
-      console.log('[FaceLandmarker] Mobile: Using CPU delegate (WebGL not supported)');
-    }
-  } else {
+  if (!isMobile) {
     delegate = 'GPU';
+  } else {
+    console.log('[FaceLandmarker] Mobile: Using CPU delegate for better landmark detection');
   }
   
   try {
@@ -88,14 +105,13 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
       outputFaceBlendshapes: false,
       runningMode: 'VIDEO',
       numFaces: 1,
-      // Mobile: ลด confidence thresholds เพื่อให้ตรวจจับได้ง่ายขึ้น แต่ไม่ต่ำเกินไป (0.15 = สมดุลระหว่างความไวและความแม่นยำ)
-      minFaceDetectionConfidence: isMobile ? 0.15 : 0.4,
-      minFacePresenceConfidence: isMobile ? 0.15 : 0.4,
-      minTrackingConfidence: isMobile ? 0.15 : 0.4,
+      // Mobile: ลดมาก (0.05) เพื่อให้จับ landmarks ได้แม้แสง/มุมไม่สมบูรณ์
+      minFaceDetectionConfidence: isMobile ? 0.05 : 0.4,
+      minFacePresenceConfidence: isMobile ? 0.05 : 0.4,
+      minTrackingConfidence: isMobile ? 0.05 : 0.4,
     });
     console.log('[FaceLandmarker] Loaded successfully with', delegate, 'delegate');
   } catch (gpuError) {
-    // ถ้า GPU ล้มเหลวบน mobile ให้ลอง CPU
     if (isMobile && delegate === 'GPU') {
       console.warn('[FaceLandmarker] GPU failed, falling back to CPU:', gpuError);
       delegate = 'CPU';
@@ -107,9 +123,9 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
         outputFaceBlendshapes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
-        minFaceDetectionConfidence: 0.1,
-        minFacePresenceConfidence: 0.1,
-        minTrackingConfidence: 0.1,
+        minFaceDetectionConfidence: 0.05,
+        minFacePresenceConfidence: 0.05,
+        minTrackingConfidence: 0.05,
       });
       console.log('[FaceLandmarker] Loaded successfully with CPU delegate (fallback)');
     } else {
@@ -472,42 +488,42 @@ export async function detectLiveness(
     
     let result;
     try {
-      // บน mobile: ลองเรียก detectForVideo หลายครั้งถ้าจำเป็น (retry logic)
-      let attempts = isMobile ? 3 : 1; // เพิ่มเป็น 3 ครั้งบน mobile
+      // บน mobile: ถ้ามี face box จาก Face Detector ให้ส่งเฉพาะ crop ใบหน้าลง canvas — ใบหน้าใหญ่ในเฟรม จับ landmarks ได้ง่ายขึ้น
+      const useFaceCrop = isMobile && faceBox.width > 10 && faceBox.height > 10;
+      const inputSource: HTMLVideoElement | HTMLCanvasElement = useFaceCrop
+        ? drawFaceCropToCanvas(video, faceBox)
+        : video;
+
+      let attempts = isMobile ? 3 : 1;
       let lastError: Error | null = null;
-      
+
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
-          // บน mobile: เพิ่ม delay ก่อนเรียก detectForVideo (ให้ video พร้อมจริงๆ)
           if (isMobile && attempt > 0) {
-            await new Promise(resolve => setTimeout(resolve, 100 * attempt)); // 100ms, 200ms
+            await new Promise(resolve => setTimeout(resolve, 100 * attempt));
           }
-          
-          result = faceLandmarker.detectForVideo(video, timestamp);
-          
-          // Debug logging บน mobile
-          if (isMobile && result && result.faceLandmarks && result.faceLandmarks.length > 0) {
-            console.log('[detectLiveness] Mobile: Face landmarks detected successfully', {
+
+          result = faceLandmarker.detectForVideo(inputSource, timestamp);
+
+          if (isMobile && result?.faceLandmarks?.length) {
+            console.log('[detectLiveness] Mobile: Face landmarks OK', {
+              useFaceCrop,
               landmarksCount: result.faceLandmarks.length,
-              videoSize: `${video.videoWidth}x${video.videoHeight}`,
-              readyState: video.readyState,
-              attempt: attempt + 1
+              attempt: attempt + 1,
             });
           }
-          
-          break; // สำเร็จแล้ว
+          break;
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           if (isMobile) {
             console.warn(`[detectLiveness] Mobile: Attempt ${attempt + 1} failed:`, err);
           }
           if (attempt < attempts - 1) {
-            // รอสักครู่ก่อนลองอีกครั้ง (เฉพาะ mobile)
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
       }
-      
+
       if (!result && lastError) {
         throw lastError;
       }
@@ -527,7 +543,7 @@ export async function detectLiveness(
       };
     }
     
-    if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+    if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
       // ไม่พบ landmarks - อาจเป็นเพราะใบหน้าไม่อยู่ในเฟรม หรือแสงไม่พอ
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       
@@ -536,7 +552,7 @@ export async function detectLiveness(
           videoSize: `${video.videoWidth}x${video.videoHeight}`,
           readyState: video.readyState,
           hasResult: !!result,
-          landmarksCount: result?.faceLandmarks?.length || 0
+          landmarksCount: result?.faceLandmarks?.length ?? 0
         });
       }
       
@@ -552,7 +568,7 @@ export async function detectLiveness(
       };
     }
     
-    const landmarks = result.faceLandmarks[0];
+    const landmarks = result!.faceLandmarks[0];
     
     // Add to history
     landmarksHistory.push({ timestamp, landmarks });

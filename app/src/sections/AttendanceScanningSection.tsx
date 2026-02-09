@@ -490,23 +490,25 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
             
             if (isMobile) {
               // บน mobile: ตรวจสอบเฉพาะ label และ deviceId เท่านั้น (ไม่ตรวจ frameRate)
-              isScreenCapture = 
-                label.includes('screen') || 
-                label.includes('capture') || 
+              isScreenCapture = Boolean(
+                label.includes('screen') ||
+                label.includes('capture') ||
                 label.includes('display') ||
                 label.includes('monitor') ||
                 settings.deviceId?.toLowerCase().includes('screen') ||
-                settings.deviceId?.toLowerCase().includes('capture');
+                settings.deviceId?.toLowerCase().includes('capture')
+              );
             } else {
               // บน desktop: ตรวจสอบเข้มงวดตามเดิม
-              isScreenCapture = 
-                label.includes('screen') || 
-                label.includes('capture') || 
+              isScreenCapture = Boolean(
+                label.includes('screen') ||
+                label.includes('capture') ||
                 label.includes('display') ||
                 label.includes('monitor') ||
                 settings.deviceId?.toLowerCase().includes('screen') ||
                 settings.deviceId?.toLowerCase().includes('capture') ||
-                (!('facingMode' in settings) && settings.frameRate && settings.frameRate < 20);
+                (!('facingMode' in settings) && settings.frameRate != null && settings.frameRate < 20)
+              );
             }
             
             if (isScreenCapture) {

@@ -6,6 +6,7 @@ import { loadMediaPipeFaceDetector, detectFaceFromVideo, isMediaPipeLoaded } fro
 import { recognizeFace } from '@/api/face';
 import { captureFrameAsBase64, captureFaceCropAsBase64 } from '@/lib/captureFrame';
 import { useBackendFace } from '@/hooks/useBackendFace';
+import { detectLiveness, isFaceLandmarkerLoaded, loadFaceLandmarker, resetLivenessDetection } from '@/lib/livenessDetection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -283,7 +284,6 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       }
       // Load face landmarker for liveness detection
       try {
-        const { loadFaceLandmarker, resetLivenessDetection } = await import('../lib/livenessDetection');
         setIsModelsLoading(true);
         await loadFaceLandmarker();
         resetLivenessDetection();
@@ -451,13 +451,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       let livenessErrorOccurred = false;
       
       try {
-        const { detectLiveness, isFaceLandmarkerLoaded } = await import('../lib/livenessDetection');
-        
         // ตรวจสอบว่า Face Landmarker โหลดแล้วหรือยัง
         if (!isFaceLandmarkerLoaded()) {
           // ถ้ายังไม่โหลด ให้ลองโหลดก่อน
           try {
-            const { loadFaceLandmarker } = await import('../lib/livenessDetection');
             await loadFaceLandmarker();
           } catch (loadError) {
             console.warn('[3D Liveness] ⚠️ Failed to load Face Landmarker:', loadError);

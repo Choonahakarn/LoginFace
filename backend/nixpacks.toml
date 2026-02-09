@@ -4,7 +4,12 @@
 [phases.setup]
 nixPkgs = [
     "pkgs.python311",
-    "pkgs.libxcb"
+    "pkgs.libxcb",
+    "pkgs.xorg.libX11",
+    "pkgs.xorg.libXext",
+    "pkgs.xorg.libXrender",
+    "pkgs.xorg.libSM",
+    "pkgs.xorg.libICE"
 ]
 
 [phases.install]
@@ -15,3 +20,6 @@ cmds = ["echo 'Build complete'"]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+[variables]
+QT_QPA_PLATFORM = "offscreen"

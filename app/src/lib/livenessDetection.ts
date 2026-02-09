@@ -575,7 +575,7 @@ export async function detectLiveness(
       };
     }
     
-    const landmarks = result!.faceLandmarks[0];
+    const landmarks = result!.faceLandmarks[0] as NormalizedLandmark[];
     
     // Add to history
     landmarksHistory.push({ timestamp, landmarks });

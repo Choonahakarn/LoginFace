@@ -20,7 +20,7 @@ export async function testConnection(imageBase64?: string): Promise<{
   saveImage: boolean | null;
   error?: string;
 }> {
-  const result = { ok: false, health: false, saveImage: null as boolean | null };
+  const result: { ok: boolean; health: boolean; saveImage: boolean | null; error?: string } = { ok: false, health: false, saveImage: null };
   try {
     const healthRes = await fetch(`${API_BASE}/api/health`);
     result.health = healthRes.ok;

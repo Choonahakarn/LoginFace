@@ -162,9 +162,9 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     // หลัง Liveness (skipMinSec): ไม่บังคับกรอบนิ่ง — ตรวจแค่ pixel เปลี่ยน (กันติด loop ไม่ผ่าน static)
     const stabilityPx = skipMinSec ? 9999 : 44;
     const stabilitySizeRatio = skipMinSec ? 1 : 0.22;
-    // หลัง Liveness: เข้มงวดมากมาก — ต้องมีการเปลี่ยนแปลงจริง (กันรูปภาพนิ่ง)
-    const minChangeToAllow = skipMinSec ? 1.5 : 3;  // หลัง Liveness: 1.5% (เข้มงวดมากมาก)
-    const threshold = skipMinSec ? 4 : 6;  // หลัง Liveness: threshold สูงขึ้นมาก (เข้มงวดมากมาก)
+    // หลัง Liveness: ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังกันรูปภาพนิ่ง
+    const minChangeToAllow = skipMinSec ? 1.0 : 3;  // หลัง Liveness: 1.0% (ผ่อนให้เร็วขึ้น)
+    const threshold = skipMinSec ? 3 : 6;  // หลัง Liveness: threshold ลดลง (ผ่อนให้เร็วขึ้น)
     const minSecToDecide = skipMinSec ? 0 : 0.04;  // หลัง Liveness ไม่รอเวลา
 
     const boxToRect = (box: { x: number; y: number; width: number; height: number }) => {

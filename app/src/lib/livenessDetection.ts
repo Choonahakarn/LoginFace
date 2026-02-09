@@ -437,12 +437,12 @@ export async function detectLiveness(
     // อัปเดต frame history แบบเบาทุกเฟรม (สำหรับบล็อกรูปนิ่ง)
     pushFrameHistoryLight(video, faceBox);
     
-    // บล็อกรูปภาพนิ่ง/รูปในมือถือทันที — เข้มงวดมากมาก
+    // บล็อกรูปภาพนิ่ง/รูปในมือถือทันที — ผ่อนเกณฑ์เพื่อความเร็ว
     if (frameHistory.length >= 2) {
       const uniqueHashes = new Set(frameHistory.map(f => f.frameHash));
       const uniqueHashRatio = uniqueHashes.size / frameHistory.length;
-      // เข้มงวดมากมาก: รูปภาพนิ่งจะมี hash เหมือนกันเกือบทุกเฟรม
-      if (uniqueHashes.size <= 1 || uniqueHashRatio < 0.6) {
+      // ผ่อนเกณฑ์: รูปภาพนิ่งจะมี hash เหมือนกันเกือบทุกเฟรม
+      if (uniqueHashes.size <= 1 || uniqueHashRatio < 0.5) {
         return {
           passed: false,
           confidence: 0,
@@ -765,7 +765,7 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   frameHistory = frameHistory.slice(-12);
   framePixelHistory = framePixelHistory.slice(-12);
   
-  if (frameHistory.length < 4) return false; // 4 เฟรมพอ
+  if (frameHistory.length < 3) return false; // 3 เฟรมพอ (เร็วขึ้น)
   
   // Check if frames are actually changing (hash-based)
   const uniqueHashes = new Set(frameHistory.map(f => f.frameHash));
@@ -802,16 +802,16 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   // 3. variance เปลี่ยนแปลงแบบกระตุก (coefficient สูง)
   // 4. การเปลี่ยนแปลงไม่ต่อเนื่อง
   
-  // เข้มงวดมากมาก: เพิ่ม threshold เพื่อบล็อกรูปภาพทุกประเภท
-  const hashVariationPass = variationRatio > 0.50; // เข้มงวดมากมาก — รูปภาพนิ่งมี hash เปลี่ยนน้อยมาก
-  const varianceVariationPass = varianceCoefficient > 0.15; // เข้มงวดมากมาก — รูปภาพมี variance คงที่
-  const varianceStdDevPass = varianceStdDev > 18; // เข้มงวดมากมาก — รูปภาพมี variance std dev ต่ำ
+  // ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังกันรูปภาพนิ่ง
+  const hashVariationPass = variationRatio > 0.40; // ผ่อนให้เร็วขึ้น — รูปภาพนิ่งมี hash เปลี่ยนน้อยมาก
+  const varianceVariationPass = varianceCoefficient > 0.12; // ผ่อนให้เร็วขึ้น — รูปภาพมี variance คงที่
+  const varianceStdDevPass = varianceStdDev > 15; // ผ่อนให้เร็วขึ้น — รูปภาพมี variance std dev ต่ำ
   const smoothChangePass = isSmoothVarianceChange; // ต้องเป็นการเปลี่ยนแปลงแบบต่อเนื่อง
   
-  // เข้มงวดมากมาก: ต้องผ่าน 4/4 หรืออย่างน้อย 3/4 (แต่ threshold สูงขึ้น)
+  // ผ่อนเกณฑ์: ต้องผ่านอย่างน้อย 2/4 (แต่ยังกันรูปภาพนิ่ง)
   const checksPassed = [hashVariationPass, varianceVariationPass, varianceStdDevPass, smoothChangePass].filter(Boolean).length;
-  // ต้องผ่านอย่างน้อย 3/4 และต้องผ่าน hashVariation (สำคัญที่สุดสำหรับรูปภาพนิ่ง)
-  return checksPassed >= 3 && hashVariationPass; // เข้มงวดมากมาก — ต้องผ่าน 3/4 และ hashVariation
+  // ต้องผ่านอย่างน้อย 2/4 และต้องผ่าน hashVariation (สำคัญที่สุดสำหรับรูปภาพนิ่ง)
+  return checksPassed >= 2 && hashVariationPass; // ผ่อนให้เร็วขึ้น — ต้องผ่าน 2/4 และ hashVariation
 }
 
 /**

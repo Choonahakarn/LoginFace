@@ -67,7 +67,7 @@ function drawFaceCropToCanvas(
     faceCropCanvas.width = FACE_CROP_CANVAS_SIZE;
     faceCropCanvas.height = FACE_CROP_CANVAS_SIZE;
   }
-  const pad = 0.35; // ขยายกรอบใบหน้า 35% เพื่อให้มีบริบท (คิ้ว คาง)
+  const pad = 0.45; // ขยายกรอบใบหน้า 45% — ใบหน้าไม่แน่นเกินไป จับ landmarks ได้หลายมุม
   const sx = Math.max(0, faceBox.x - faceBox.width * pad);
   const sy = Math.max(0, faceBox.y - faceBox.height * pad);
   const sw = Math.min(video.videoWidth - sx, faceBox.width * (1 + 2 * pad));
@@ -105,10 +105,10 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
       outputFaceBlendshapes: false,
       runningMode: 'VIDEO',
       numFaces: 1,
-      // Mobile: ลดมาก (0.05) เพื่อให้จับ landmarks ได้แม้แสง/มุมไม่สมบูรณ์
-      minFaceDetectionConfidence: isMobile ? 0.05 : 0.4,
-      minFacePresenceConfidence: isMobile ? 0.05 : 0.4,
-      minTrackingConfidence: isMobile ? 0.05 : 0.4,
+      // Mobile: ลดมาก (0.03) เพื่อให้จับ landmarks ได้แม้มุม/แสงไม่สมบูรณ์
+      minFaceDetectionConfidence: isMobile ? 0.03 : 0.4,
+      minFacePresenceConfidence: isMobile ? 0.03 : 0.4,
+      minTrackingConfidence: isMobile ? 0.03 : 0.4,
     });
     console.log('[FaceLandmarker] Loaded successfully with', delegate, 'delegate');
   } catch (gpuError) {
@@ -123,9 +123,9 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
         outputFaceBlendshapes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
-        minFaceDetectionConfidence: 0.05,
-        minFacePresenceConfidence: 0.05,
-        minTrackingConfidence: 0.05,
+        minFaceDetectionConfidence: 0.03,
+        minFacePresenceConfidence: 0.03,
+        minTrackingConfidence: 0.03,
       });
       console.log('[FaceLandmarker] Loaded successfully with CPU delegate (fallback)');
     } else {
@@ -486,40 +486,47 @@ export async function detectLiveness(
       };
     }
     
-    let result;
+    let result: { faceLandmarks?: unknown[] } | undefined;
     try {
-      // บน mobile: ถ้ามี face box จาก Face Detector ให้ส่งเฉพาะ crop ใบหน้าลง canvas — ใบหน้าใหญ่ในเฟรม จับ landmarks ได้ง่ายขึ้น
       const useFaceCrop = isMobile && faceBox.width > 10 && faceBox.height > 10;
       const inputSource: HTMLVideoElement | HTMLCanvasElement = useFaceCrop
         ? drawFaceCropToCanvas(video, faceBox)
         : video;
 
-      let attempts = isMobile ? 3 : 1;
+      const attempts = isMobile ? 5 : 1; // บน mobile ลองหลายครั้ง + สลับ full video ถ้า crop ไม่เจอ
       let lastError: Error | null = null;
 
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           if (isMobile && attempt > 0) {
-            await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+            await new Promise(resolve => setTimeout(resolve, 80 * attempt));
           }
 
-          result = faceLandmarker.detectForVideo(inputSource, timestamp);
+          // บน mobile: บาง attempt ลองทั้ง crop และ full video
+          const source = (isMobile && attempt >= 2 && useFaceCrop) ? video : inputSource;
+          result = faceLandmarker.detectForVideo(source, timestamp);
 
-          if (isMobile && result?.faceLandmarks?.length) {
-            console.log('[detectLiveness] Mobile: Face landmarks OK', {
-              useFaceCrop,
-              landmarksCount: result.faceLandmarks.length,
-              attempt: attempt + 1,
-            });
+          if (result?.faceLandmarks?.length) {
+            if (isMobile) {
+              console.log('[detectLiveness] Mobile: Face landmarks OK', {
+                useFaceCrop,
+                usedFullVideo: source === video,
+                attempt: attempt + 1,
+              });
+            }
+            break;
           }
-          break;
+          // ไม่มี landmarks — บน mobile ลองใช้ full video ในรอบถัดไป
+          if (isMobile && attempt < attempts - 1) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           if (isMobile) {
             console.warn(`[detectLiveness] Mobile: Attempt ${attempt + 1} failed:`, err);
           }
           if (attempt < attempts - 1) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 80));
           }
         }
       }
@@ -560,7 +567,7 @@ export async function detectLiveness(
         passed: false,
         confidence: 0,
         reasons: [isMobile 
-          ? '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง อยู่ที่แสงสว่างพอ และอยู่ห่างจากกล้องประมาณ 30-50 ซม.' 
+          ? '⏳ ยังจับจุดใบหน้าไม่เจอ — ลองขยับหน้านิดหนึ่งหรือหามุมที่แสงพอ แล้วมองตรงกล้อง' 
           : '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
         blinkDetected: false,
         headMovementDetected: false,

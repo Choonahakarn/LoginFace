@@ -40,7 +40,8 @@ import {
   RotateCcw,
   Maximize2,
   Minimize2,
-  UserX
+  UserX,
+  FlipHorizontal
 } from 'lucide-react';
 
 interface AttendanceScanningSectionProps {
@@ -77,6 +78,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     texture: boolean;
     confidence: number;
   } | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); // 'user' = กล้องหน้า, 'environment' = กล้องหลัง
   const SCAN_INTERVAL_MS = 8;  // ลดจาก 12 เป็น 8 — สแกนถี่มาก (ทันที)
   const SCAN_COOLDOWN_MS = 15; // ลดจาก 20 เป็น 15
   /** Reuse face box เพื่อ skip detector บางเฟรม — เพิ่มความเร็ว */
@@ -272,7 +274,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     return true;
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (facing: 'user' | 'environment' = facingMode) => {
     try {
       setError(null);
       baselineFaceCropRef.current = null;
@@ -281,6 +283,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       livenessPassedAtRef.current = 0;
       lastFaceBoxRef.current = null;
       detectorFrameCountRef.current = 0;
+      
+      // ปิด stream เดิมก่อน (ถ้ามี)
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      
       if (!isMediaPipeLoaded()) {
         setIsModelsLoading(true);
         await loadMediaPipeFaceDetector();
@@ -298,10 +307,11 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       }
       // ลด resolution เพื่อเพิ่มความเร็ว: 640x480 แทน 1280x720 (เร็วขึ้น 2-4 เท่า)
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facing },
         audio: false
       });
       streamRef.current = stream;
+      setFacingMode(facing);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCameraActive(true);
@@ -310,7 +320,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       setIsModelsLoading(false);
       setError(err instanceof Error ? err.message : 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
-  }, []);
+  }, [facingMode]);
+  
+  const switchCamera = useCallback(async () => {
+    if (!isCameraActive) return;
+    const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+    await startCamera(newFacingMode);
+  }, [isCameraActive, facingMode, startCamera]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -1229,6 +1245,17 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                             เริ่มสแกน
                           </>
                         )}
+                      </Button>
+                      <Button 
+                        onClick={switchCamera} 
+                        variant="outline" 
+                        size="lg"
+                        disabled={!isCameraActive || isScanning}
+                        className="border-purple-300 text-purple-600 hover:bg-purple-50"
+                        title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
+                      >
+                        <FlipHorizontal className="w-5 h-5 mr-2" />
+                        {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
                       </Button>
                       <Button 
                         onClick={enterFullscreen} 

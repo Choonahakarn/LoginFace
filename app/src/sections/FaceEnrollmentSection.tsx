@@ -20,7 +20,8 @@ import {
   GraduationCap,
   Plus,
   Trash2,
-  X
+  X,
+  FlipHorizontal
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -94,6 +95,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const [success, setSuccess] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [connectionTest, setConnectionTest] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); // 'user' = กล้องหน้า, 'environment' = กล้องหลัง
   /** เก็บรูปเมื่อ error "โมเดลไม่ตรง" เพื่อให้กดปุ่มล้างข้อมูลเก่าและลงทะเบียนใหม่ได้ */
   const [retryWithForceNewModelBase64, setRetryWithForceNewModelBase64] = useState<string | null>(null);
   const [duplicateDialog, setDuplicateDialog] = useState<{
@@ -109,20 +111,28 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (facing: 'user' | 'environment' = facingMode) => {
     try {
       setError(null);
-    setRetryWithForceNewModelBase64(null);
+      setRetryWithForceNewModelBase64(null);
+      
+      // ปิด stream เดิมก่อน (ถ้ามี)
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      
       if (!isMediaPipeLoaded()) {
         setIsModelsLoading(true);
         await loadMediaPipeFaceDetector();
         setIsModelsLoading(false);
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facing },
         audio: false
       });
       streamRef.current = stream;
+      setFacingMode(facing);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCameraActive(true);
@@ -131,7 +141,13 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
       setIsModelsLoading(false);
       setError(err instanceof Error ? err.message : 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
-  }, []);
+  }, [facingMode]);
+  
+  const switchCamera = useCallback(async () => {
+    if (!isCameraActive) return;
+    const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+    await startCamera(newFacingMode);
+  }, [isCameraActive, facingMode, startCamera]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -628,7 +644,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   )}
 
                   {/* Controls */}
-                  <div className="flex justify-center gap-4">
+                  <div className="flex justify-center gap-4 flex-wrap">
                     <Button 
                       onClick={captureFace} 
                       size="lg"
@@ -643,6 +659,17 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                           บันทึกใบหน้า (3D)
                         </>
                       )}
+                    </Button>
+                    <Button 
+                      onClick={switchCamera} 
+                      variant="outline" 
+                      size="lg"
+                      disabled={!isCameraActive || isCapturing}
+                      className="border-purple-300 text-purple-600 hover:bg-purple-50"
+                      title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
+                    >
+                      <FlipHorizontal className="w-5 h-5 mr-2" />
+                      {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
                     </Button>
                   </div>
 

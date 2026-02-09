@@ -1,0 +1,16 @@
+# Face Attendance Backend - PyTorch, RetinaFace, InsightFace
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Face & Deep Learning (mediapipe = optional, ถ้าติดตั้งได้จะช่วยตรวจจับใบหน้าได้ดีขึ้น)
+# pip install mediapipe  # เมื่อปิด Backend แล้ว
+deepface>=0.0.79
+tf-keras>=2.16.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Utils
+pydantic>=2.0.0
+aiofiles>=23.0.0

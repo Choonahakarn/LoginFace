@@ -435,7 +435,31 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   }, []);
 
   const performScan = useCallback(async () => {
-    if (!isCameraActive || scanCooldown || !videoRef.current || scanInProgressRef.current) return;
+    const isMobile = isMobileDevice || window.innerWidth <= 768;
+    
+    // Debug logging บน mobile
+    if (isMobile && Math.random() < 0.01) { // ~1% chance = ~ทุก 100 calls
+      console.log('[performScan] Mobile: Called', {
+        isCameraActive,
+        scanCooldown,
+        hasVideo: !!videoRef.current,
+        scanInProgress: scanInProgressRef.current,
+        videoReadyState: videoRef.current?.readyState,
+        videoSize: videoRef.current ? `${videoRef.current.videoWidth}x${videoRef.current.videoHeight}` : 'N/A'
+      });
+    }
+    
+    if (!isCameraActive || scanCooldown || !videoRef.current || scanInProgressRef.current) {
+      if (isMobile && Math.random() < 0.05) { // ~5% chance
+        console.warn('[performScan] Mobile: Early return', {
+          isCameraActive,
+          scanCooldown,
+          hasVideo: !!videoRef.current,
+          scanInProgress: scanInProgressRef.current
+        });
+      }
+      return;
+    }
     scanInProgressRef.current = true;
 
     try {
@@ -450,7 +474,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         return;
       }
       
-      // ตรวจสอบเพิ่มเติม: ตรวจสอบว่าเป็น screen capture หรือไม่ - เข้มงวดมาก
+      // ตรวจสอบเพิ่มเติม: ตรวจสอบว่าเป็น screen capture หรือไม่ - ปรับให้ไม่บล็อก mobile ที่ถูกต้อง
       try {
         const stream = video.srcObject as MediaStream;
         if (stream) {
@@ -458,29 +482,62 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
           if (videoTrack) {
             const label = videoTrack.label.toLowerCase();
             const settings = videoTrack.getSettings();
+            const isMobile = isMobileDevice || window.innerWidth <= 768;
             
-            // ตรวจสอบหลายวิธีเพื่อบล็อก screen capture
-            const isScreenCapture = 
-              label.includes('screen') || 
-              label.includes('capture') || 
-              label.includes('display') ||
-              label.includes('monitor') ||
-              settings.deviceId?.toLowerCase().includes('screen') ||
-              settings.deviceId?.toLowerCase().includes('capture') ||
-              (!('facingMode' in settings) && settings.frameRate && settings.frameRate < 20);
+            // บน mobile: ตรวจสอบเบาลง (เพราะบางครั้ง facingMode อาจไม่มีหรือ frameRate อาจต่ำ)
+            // บน desktop: ตรวจสอบเข้มงวดตามเดิม
+            let isScreenCapture = false;
+            
+            if (isMobile) {
+              // บน mobile: ตรวจสอบเฉพาะ label และ deviceId เท่านั้น (ไม่ตรวจ frameRate)
+              isScreenCapture = 
+                label.includes('screen') || 
+                label.includes('capture') || 
+                label.includes('display') ||
+                label.includes('monitor') ||
+                settings.deviceId?.toLowerCase().includes('screen') ||
+                settings.deviceId?.toLowerCase().includes('capture');
+            } else {
+              // บน desktop: ตรวจสอบเข้มงวดตามเดิม
+              isScreenCapture = 
+                label.includes('screen') || 
+                label.includes('capture') || 
+                label.includes('display') ||
+                label.includes('monitor') ||
+                settings.deviceId?.toLowerCase().includes('screen') ||
+                settings.deviceId?.toLowerCase().includes('capture') ||
+                (!('facingMode' in settings) && settings.frameRate && settings.frameRate < 20);
+            }
             
             if (isScreenCapture) {
-              setError('❌ ตรวจพบ Screen Capture กรุณาใช้กล้องจริงเท่านั้น ไม่สามารถใช้รูปภาพในโทรศัพท์ได้');
+              const errorMsg = isMobile 
+                ? '❌ ตรวจพบ Screen Capture กรุณาใช้กล้องจริงเท่านั้น'
+                : '❌ ตรวจพบ Screen Capture กรุณาใช้กล้องจริงเท่านั้น ไม่สามารถใช้รูปภาพในโทรศัพท์ได้';
+              setError(errorMsg);
               setFaceBox(null);
               setFaceBoxLabel(null);
               scanInProgressRef.current = false;
+              if (isMobile) {
+                console.warn('[performScan] Mobile: Screen capture detected', {
+                  label,
+                  deviceId: settings.deviceId,
+                  facingMode: settings.facingMode,
+                  frameRate: settings.frameRate
+                });
+              }
               return;
             }
           }
         }
       } catch (err) {
-        // ถ้าเกิด error ให้บล็อกเพื่อความปลอดภัย
-        console.warn('Screen capture detection error:', err);
+        // บน mobile: ไม่บล็อกถ้าเกิด error (อาจเป็นเพราะ browser ไม่รองรับบาง API)
+        const isMobile = isMobileDevice || window.innerWidth <= 768;
+        if (isMobile) {
+          console.warn('[performScan] Mobile: Screen capture detection error (continuing):', err);
+        } else {
+          console.warn('Screen capture detection error:', err);
+        }
+        // ไม่ return - ให้ผ่านไปต่อ
       }
 
       const ts = performance.now();
@@ -886,6 +943,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   }, []);
 
   const toggleScanning = useCallback(() => {
+    const isMobile = isMobileDevice || window.innerWidth <= 768;
+    
     if (isScanning) {
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
@@ -905,9 +964,21 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       lastPopupClosedAtRef.current = 0;
       scanStartTimeRef.current = Date.now();
       setIsScanning(true);
+      
+      // Debug logging บน mobile
+      if (isMobile) {
+        console.log('[toggleScanning] Mobile: Starting scan interval', {
+          isCameraActive,
+          hasVideo: !!videoRef.current,
+          videoReadyState: videoRef.current?.readyState,
+          videoSize: videoRef.current ? `${videoRef.current.videoWidth}x${videoRef.current.videoHeight}` : 'N/A',
+          SCAN_INTERVAL_MS
+        });
+      }
+      
       scanIntervalRef.current = setInterval(() => { performScan(); }, SCAN_INTERVAL_MS); // เร่งสแกนให้ถี่ขึ้น
     }
-  }, [isScanning, performScan, clearLastResultPopup]);
+  }, [isScanning, performScan, clearLastResultPopup, isCameraActive, isMobileDevice]);
 
   // Sync video stream ไปยัง expanded video element
   // Fullscreen: ฟัง fullscreenchange

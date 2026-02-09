@@ -559,6 +559,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
           if (abortController.signal.aborted) {
             return;
           }
+          console.log('[Face Recognition] Result:', { matched: res.matched, student_id: res.student_id, similarity: res.similarity });
           if (res.matched && res.student_id) {
             // Multi-frame verification: เพิ่มผลการจดจำเข้า history
             const now = Date.now();
@@ -619,8 +620,9 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
             }
           } else {
             // ไม่พบ match - ล้าง history
+            console.log('[Face Recognition] No match:', { matched: res.matched, student_id: res.student_id, similarity: res.similarity });
             recognitionHistoryRef.current = [];
-            setFaceBoxLabel({ isUnknown: true, similarity: res.similarity });
+            setFaceBoxLabel({ isUnknown: true, similarity: res.similarity, hint: res.matched ? 'ไม่พบข้อมูลในระบบ' : `ไม่ตรงกับข้อมูล (${Math.round(res.similarity * 100)}%)` });
           }
         } catch (err) {
           // Ignore abort errors

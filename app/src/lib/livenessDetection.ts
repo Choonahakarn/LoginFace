@@ -58,6 +58,9 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
   if (faceLandmarker) return faceLandmarker;
   
   const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+  // ตรวจสอบว่าเป็น mobile device หรือไม่
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: MODEL_URL,
@@ -66,9 +69,10 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
     outputFaceBlendshapes: false,
     runningMode: 'VIDEO',
     numFaces: 1,
-    minFaceDetectionConfidence: 0.4, // ลดเพื่อเพิ่มความเร็ว
-    minFacePresenceConfidence: 0.4,   // ลดเพื่อเพิ่มความเร็ว
-    minTrackingConfidence: 0.4,       // ลดเพื่อเพิ่มความเร็ว
+    // Mobile: ลด confidence thresholds เพื่อให้ตรวจจับได้ง่ายขึ้น
+    minFaceDetectionConfidence: isMobile ? 0.3 : 0.4,
+    minFacePresenceConfidence: isMobile ? 0.3 : 0.4,
+    minTrackingConfidence: isMobile ? 0.3 : 0.4,
   });
   
   return faceLandmarker;
@@ -369,8 +373,8 @@ export async function detectLiveness(
       }
     }
     
-    // ตรวจสอบว่า video พร้อมหรือไม่
-    if (!faceLandmarker || video.readyState < 2 || video.videoWidth === 0) {
+    // ตรวจสอบว่า video พร้อมหรือไม่ - mobile อาจใช้เวลานานกว่า
+    if (!faceLandmarker) {
       return {
         passed: false,
         confidence: 0,
@@ -381,12 +385,12 @@ export async function detectLiveness(
       };
     }
     
-    // ตรวจสอบว่า video มีขนาดหรือไม่
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
+    // รอให้ video พร้อม - mobile อาจใช้เวลานานกว่า
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
       return {
         passed: false,
         confidence: 0,
-        reasons: ['⏳ กล้องกำลังโหลด... กรุณารอสักครู่'],
+        reasons: ['⏳ กำลังโหลดวิดีโอ... กรุณารอสักครู่'],
         blinkDetected: false,
         headMovementDetected: false,
         textureAnalysisPassed: false,
@@ -402,10 +406,14 @@ export async function detectLiveness(
     }
     
     if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+      // บน mobile อาจต้องใช้เวลามากขึ้นในการตรวจจับ - ให้ข้อความที่ชัดเจนขึ้น
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       return {
         passed: false,
         confidence: 0,
-        reasons: ['⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
+        reasons: [isMobile 
+          ? '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง อยู่ที่แสงสว่างพอ และอยู่ห่างจากกล้องพอดี' 
+          : '⏳ ไม่พบ facial landmarks - กรุณามองตรงที่กล้อง'],
         blinkDetected: false,
         headMovementDetected: false,
         textureAnalysisPassed: false,

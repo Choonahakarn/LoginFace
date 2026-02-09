@@ -19,7 +19,7 @@ cmds = ["pip install --no-cache-dir -r requirements.txt"]
 cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "export LD_LIBRARY_PATH=/nix/store/*/lib:$LD_LIBRARY_PATH && uvicorn main:app --host 0.0.0.0 --port $PORT"
 
 [variables]
 QT_QPA_PLATFORM = "offscreen"

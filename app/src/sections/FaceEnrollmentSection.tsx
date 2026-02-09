@@ -46,6 +46,21 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const backendFace = useBackendFace();
   const [backendFaceCounts, setBackendFaceCounts] = useState<Record<string, number>>({});
   const [backendFaceRecords, setBackendFaceRecords] = useState<Record<string, { enrolledAt: string; confidence: number }[]>>({});
+  
+  // ตรวจสอบว่าเป็น mobile device หรือ tablet (รวม iPad)
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  useEffect(() => {
+    const checkMobileDevice = () => {
+      // ตรวจสอบ touch device หรือ screen width <= 1024px (ครอบคลุม iPad)
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth <= 1024;
+      const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobileDevice(isTouchDevice && (isSmallScreen || isMobileUserAgent));
+    };
+    checkMobileDevice();
+    window.addEventListener('resize', checkMobileDevice);
+    return () => window.removeEventListener('resize', checkMobileDevice);
+  }, []);
 
   const resolvedFaceCount = useCallback((sid: string) => backendFaceCounts[sid] ?? 0, [backendFaceCounts]);
   const resolvedFaceRecords = useCallback((sid: string) => backendFaceRecords[sid] ?? [], [backendFaceRecords]);
@@ -666,17 +681,19 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                         </>
                       )}
                     </Button>
-                    <Button 
-                      onClick={switchCamera} 
-                      variant="outline" 
-                      size="lg"
-                      disabled={isCapturing}
-                      className="w-full sm:w-auto border-purple-500 text-purple-700 hover:bg-purple-100 disabled:opacity-50 bg-purple-50"
-                      title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
-                    >
-                      <FlipHorizontal className="w-5 h-5 mr-2" />
-                      {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
-                    </Button>
+                    {isMobileDevice && (
+                      <Button 
+                        onClick={switchCamera} 
+                        variant="outline" 
+                        size="lg"
+                        disabled={isCapturing}
+                        className="w-full sm:w-auto border-purple-500 text-purple-700 hover:bg-purple-100 disabled:opacity-50 bg-purple-50"
+                        title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
+                      >
+                        <FlipHorizontal className="w-5 h-5 mr-2" />
+                        {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
+                      </Button>
+                    )}
                   </div>
 
                   {/* Instructions */}

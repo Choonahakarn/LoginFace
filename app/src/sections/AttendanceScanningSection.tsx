@@ -55,6 +55,21 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   const classId = selectedClassId ?? 'class-1';
   const lateGraceMinutes = selectedClass?.lateGraceMinutes ?? 15;
   
+  // ตรวจสอบว่าเป็น mobile device หรือ tablet (รวม iPad)
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  useEffect(() => {
+    const checkMobileDevice = () => {
+      // ตรวจสอบ touch device หรือ screen width <= 1024px (ครอบคลุม iPad)
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth <= 1024;
+      const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobileDevice(isTouchDevice && (isSmallScreen || isMobileUserAgent));
+    };
+    checkMobileDevice();
+    window.addEventListener('resize', checkMobileDevice);
+    return () => window.removeEventListener('resize', checkMobileDevice);
+  }, []);
+  
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -1251,17 +1266,19 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                           </>
                         )}
                       </Button>
-                      <Button 
-                        onClick={switchCamera} 
-                        variant="outline" 
-                        size="lg"
-                        disabled={isScanning}
-                        className="w-full sm:w-auto border-purple-500 text-purple-700 hover:bg-purple-100 disabled:opacity-50 bg-purple-50"
-                        title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
-                      >
-                        <FlipHorizontal className="w-5 h-5 mr-2" />
-                        {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
-                      </Button>
+                      {isMobileDevice && (
+                        <Button 
+                          onClick={switchCamera} 
+                          variant="outline" 
+                          size="lg"
+                          disabled={isScanning}
+                          className="w-full sm:w-auto border-purple-500 text-purple-700 hover:bg-purple-100 disabled:opacity-50 bg-purple-50"
+                          title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
+                        >
+                          <FlipHorizontal className="w-5 h-5 mr-2" />
+                          {facingMode === 'user' ? 'กล้องหลัง' : 'กล้องหน้า'}
+                        </Button>
+                      )}
                       <Button 
                         onClick={enterFullscreen} 
                         variant="outline" 

@@ -111,7 +111,8 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const startCamera = useCallback(async (facing: 'user' | 'environment' = facingMode) => {
+  const startCamera = useCallback(async (facing?: 'user' | 'environment') => {
+    const facingModeToUse = facing ?? facingMode;
     try {
       setError(null);
       setRetryWithForceNewModelBase64(null);
@@ -128,11 +129,11 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
         setIsModelsLoading(false);
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facing },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse },
         audio: false
       });
       streamRef.current = stream;
-      setFacingMode(facing);
+      setFacingMode(facingModeToUse);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCameraActive(true);
@@ -142,6 +143,10 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
       setError(err instanceof Error ? err.message : 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
   }, [facingMode]);
+  
+  const handleStartCamera = useCallback(() => {
+    startCamera();
+  }, [startCamera]);
   
   const switchCamera = useCallback(async () => {
     if (!isCameraActive) return;

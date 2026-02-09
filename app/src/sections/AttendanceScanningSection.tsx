@@ -274,7 +274,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     return true;
   }, []);
 
-  const startCamera = useCallback(async (facing: 'user' | 'environment' = facingMode) => {
+  const startCamera = useCallback(async (facing?: 'user' | 'environment') => {
+    const facingModeToUse = facing ?? facingMode;
     try {
       setError(null);
       baselineFaceCropRef.current = null;
@@ -307,11 +308,11 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       }
       // ลด resolution เพื่อเพิ่มความเร็ว: 640x480 แทน 1280x720 (เร็วขึ้น 2-4 เท่า)
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facing },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse },
         audio: false
       });
       streamRef.current = stream;
-      setFacingMode(facing);
+      setFacingMode(facingModeToUse);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCameraActive(true);
@@ -321,6 +322,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       setError(err instanceof Error ? err.message : 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
   }, [facingMode]);
+  
+  const handleStartCamera = useCallback(() => {
+    startCamera();
+  }, [startCamera]);
   
   const switchCamera = useCallback(async () => {
     if (!isCameraActive) return;
@@ -1223,7 +1228,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                   </p>
                   <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
                   {!isCameraActive ? (
-                    <Button onClick={startCamera} size="lg" className="w-full sm:w-auto">
+                    <Button onClick={handleStartCamera} size="lg" className="w-full sm:w-auto">
                       <Camera className="w-5 h-5 mr-2" />
                       เปิดกล้อง
                     </Button>

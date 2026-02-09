@@ -666,7 +666,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                       variant="outline" 
                       size="lg"
                       disabled={isCapturing}
-                      className="w-full sm:w-auto border-purple-300 text-purple-600 hover:bg-purple-50 disabled:opacity-50"
+                      className="w-full sm:w-auto border-purple-500 text-purple-700 hover:bg-purple-100 disabled:opacity-50 bg-purple-50"
                       title={facingMode === 'user' ? 'สลับเป็นกล้องหลัง' : 'สลับเป็นกล้องหน้า'}
                     >
                       <FlipHorizontal className="w-5 h-5 mr-2" />

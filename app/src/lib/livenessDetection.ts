@@ -73,10 +73,10 @@ export async function loadFaceLandmarker(): Promise<FaceLandmarker> {
     outputFaceBlendshapes: false,
     runningMode: 'VIDEO',
     numFaces: 1,
-    // Mobile: ลด confidence thresholds ลงมากเพื่อให้ตรวจจับได้ง่ายขึ้น
-    minFaceDetectionConfidence: isMobile ? 0.2 : 0.4,
-    minFacePresenceConfidence: isMobile ? 0.2 : 0.4,
-    minTrackingConfidence: isMobile ? 0.2 : 0.4,
+    // Mobile: ลด confidence thresholds ลงมากเพื่อให้ตรวจจับได้ง่ายขึ้น (0.15 = ต่ำมาก)
+    minFaceDetectionConfidence: isMobile ? 0.15 : 0.4,
+    minFacePresenceConfidence: isMobile ? 0.15 : 0.4,
+    minTrackingConfidence: isMobile ? 0.15 : 0.4,
   });
   
   return faceLandmarker;
@@ -389,9 +389,14 @@ export async function detectLiveness(
       };
     }
     
-    // รอให้ video พร้อม - mobile อาจใช้เวลานานกว่า
-    // ตรวจสอบ readyState >= 2 (HAVE_CURRENT_DATA) และมีขนาด video
-    if (video.readyState < 2) {
+    // ตรวจสอบว่าเป็น mobile device หรือไม่
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+    
+    // บน mobile: รอให้ video พร้อมมากขึ้น (readyState >= 3 = HAVE_FUTURE_DATA)
+    // บน desktop: readyState >= 2 ก็พอ
+    const minReadyState = isMobile ? 3 : 2;
+    
+    if (video.readyState < minReadyState) {
       return {
         passed: false,
         confidence: 0,
@@ -414,21 +419,40 @@ export async function detectLiveness(
       };
     }
     
+    // บน mobile: ตรวจสอบว่า video มีขนาดที่เหมาะสม (ไม่ควรเป็น 0)
+    if (isMobile && (video.videoWidth < 100 || video.videoHeight < 100)) {
+      return {
+        passed: false,
+        confidence: 0,
+        reasons: ['⏳ กำลังโหลดวิดีโอ... กรุณารอสักครู่'],
+        blinkDetected: false,
+        headMovementDetected: false,
+        textureAnalysisPassed: false,
+      };
+    }
+    
     let result;
     try {
-      // ตรวจสอบว่า video มีขนาดจริงๆ ก่อนเรียก detectForVideo
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        return {
-          passed: false,
-          confidence: 0,
-          reasons: ['⏳ กำลังโหลดวิดีโอ... กรุณารอสักครู่'],
-          blinkDetected: false,
-          headMovementDetected: false,
-          textureAnalysisPassed: false,
-        };
+      // บน mobile: ลองเรียก detectForVideo หลายครั้งถ้าจำเป็น (retry logic)
+      let attempts = isMobile ? 2 : 1;
+      let lastError: Error | null = null;
+      
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          result = faceLandmarker.detectForVideo(video, timestamp);
+          break; // สำเร็จแล้ว
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          if (attempt < attempts - 1) {
+            // รอสักครู่ก่อนลองอีกครั้ง (เฉพาะ mobile)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
       }
       
-      result = faceLandmarker.detectForVideo(video, timestamp);
+      if (!result && lastError) {
+        throw lastError;
+      }
     } catch (detectError) {
       console.error('[detectLiveness] detectForVideo failed:', detectError);
       // บน mobile อาจเกิด error บ่อยกว่า - ให้ fallback ที่ดีขึ้น

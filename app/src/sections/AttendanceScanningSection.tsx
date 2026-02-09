@@ -321,9 +321,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         console.warn('Failed to load face landmarker:', err);
         // Continue without advanced liveness detection
       }
-      // ลด resolution เพื่อเพิ่มความเร็ว: 640x480 แทน 1280x720 (เร็วขึ้น 2-4 เท่า)
+      // ปรับ resolution ตาม device: mobile ใช้ 640x480, desktop ใช้ 1280x720
+      const isMobile = isMobileDevice || window.innerWidth <= 768;
+      const videoConstraints = isMobile
+        ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse }
+        : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse };
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse },
+        video: videoConstraints,
         audio: false
       });
       streamRef.current = stream;
@@ -336,7 +340,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       setIsModelsLoading(false);
       setError(err instanceof Error ? err.message : 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
-  }, [facingMode]);
+  }, [facingMode, isMobileDevice]);
   
   const handleStartCamera = useCallback(() => {
     startCamera();
@@ -1176,7 +1180,11 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                 {/* Camera Preview - ขยายพื้นที่สแกนให้กว้างใหญ่ (แบบระบบเช็คชื่อด้วยใบหน้า AI) */}
                 <div
                   ref={fullscreenContainerRef}
-                  className="relative w-full aspect-video min-h-[200px] max-h-[50vh] sm:max-h-[58vh] lg:max-h-[65vh] bg-black rounded-xl overflow-hidden [&:fullscreen]:aspect-auto [&:fullscreen]:min-h-0 [&:fullscreen]:max-h-none [&:fullscreen]:h-full [&:fullscreen]:w-full [&:fullscreen]:rounded-none"
+                  className={`relative w-full bg-black rounded-xl overflow-hidden [&:fullscreen]:aspect-auto [&:fullscreen]:min-h-0 [&:fullscreen]:max-h-none [&:fullscreen]:h-full [&:fullscreen]:w-full [&:fullscreen]:rounded-none ${
+                    isMobileDevice 
+                      ? 'aspect-[9/16] min-h-[300px] max-h-[70vh]' // Mobile: portrait orientation
+                      : 'aspect-video min-h-[200px] max-h-[50vh] sm:max-h-[58vh] lg:max-h-[65vh]' // Desktop: landscape
+                  }`}
                 >
                   <video
                     ref={videoRef}
@@ -1184,6 +1192,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                     playsInline
                     muted
                     className="w-full h-full object-cover"
+                    style={{ 
+                      transform: facingMode === 'environment' && isMobileDevice ? 'scaleX(-1)' : 'none',
+                      WebkitTransform: facingMode === 'environment' && isMobileDevice ? 'scaleX(-1)' : 'none'
+                    }}
                   />
                   <canvas ref={canvasRef} className="hidden" />
                   <canvas
@@ -1238,10 +1250,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
 
                 {/* Controls */}
                 <div className="space-y-3">
-                  <p className="text-center text-sm text-gray-600">
+                  <p className={`text-center ${isMobileDevice ? 'text-xs' : 'text-sm'} text-gray-600`}>
                     กำลังสแกนเช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
-                  <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
+                  <div className={`flex justify-center flex-wrap ${isMobileDevice ? 'gap-2' : 'gap-2 sm:gap-4'}`}>
                   {!isCameraActive ? (
                     <Button onClick={handleStartCamera} size="lg" className="w-full sm:w-auto">
                       <Camera className="w-5 h-5 mr-2" />
@@ -1299,18 +1311,18 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                 </div>
 
                 {/* Instructions */}
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-800 mb-2">วิธีใช้:</h4>
-                  <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                <div className={`bg-blue-50 rounded-lg ${isMobileDevice ? 'p-3' : 'p-4'}`}>
+                  <h4 className={`font-medium text-blue-800 mb-2 ${isMobileDevice ? 'text-sm' : ''}`}>วิธีใช้:</h4>
+                  <ol className={`${isMobileDevice ? 'text-xs' : 'text-sm'} text-blue-700 space-y-1 list-decimal list-inside`}>
                     <li>เปิดกล้องและกด เริ่มสแกน</li>
                     <li><strong>วางใบหน้าในกรอบ</strong> มองตรงที่กล้อง แล้ว<strong>กระพริบตาหนึ่งครั้ง</strong></li>
                     <li>อยู่ที่แสงสว่างพอ — ถ้าสแกนไม่ติด ลองกระพริบตาอีกครั้ง</li>
                     <li>รอ 1–2 วินาทีก่อนเช็คชื่อคนต่อไป</li>
                   </ol>
-                  <p className="text-sm text-blue-600 mt-2 border-t border-blue-200 pt-2">
+                  <p className={`${isMobileDevice ? 'text-xs' : 'text-sm'} text-blue-600 mt-2 border-t border-blue-200 pt-2`}>
                     ⏱ นับจากกด &quot;เริ่มสแกน&quot; — ภายใน {lateGraceMinutes} นาที = <strong>เข้าเรียนแล้ว</strong>, เกิน {lateGraceMinutes} นาที = <strong>มาสาย</strong>
                   </p>
-                  <p className="text-xs text-blue-500 mt-1">
+                  <p className={`${isMobileDevice ? 'text-xs' : 'text-xs'} text-blue-500 mt-1`}>
                     ระบบจะบล็อกเมื่อตรวจพบรูปภาพนิ่งบนหน้าจอ — แนะนำให้ใช้ในห้องที่ครูดูแล
                   </p>
                 </div>

@@ -97,6 +97,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   const recognitionHistoryRef = useRef<Array<{ studentId: string; similarity: number; timestamp: number }>>([]);
   const REQUIRED_CONSISTENT_MATCHES = 1; // จดจำได้ 1 ครั้งก็ผ่าน — เพิ่มความเร็ว
   const VERIFICATION_WINDOW_MS = 300; // ลดเวลา window เพื่อเพิ่มความเร็ว
+  // Debouncing สำหรับ error message — ป้องกันข้อความเด้งรัวๆ
+  const lastErrorRef = useRef<string | null>(null);
+  const errorDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ERROR_DEBOUNCE_MS = 300; // รอ 300ms ก่อนแสดง error ใหม่ (ป้องกันเด้งรัว)
   /** เก็บเวลาที่กด "เริ่มสแกน" — ภายใน X นาที = เข้าเรียนแล้ว เกิน X นาที = มาสาย (ตั้งค่าได้ต่อห้อง) */
   const scanStartTimeRef = useRef<number | null>(null);
   const faceCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -332,6 +336,12 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       livenessPassedAtRef.current = 0;
       lastFaceBoxRef.current = null;
       detectorFrameCountRef.current = 0;
+      // Clear error debounce timer
+      if (errorDebounceTimerRef.current) {
+        clearTimeout(errorDebounceTimerRef.current);
+        errorDebounceTimerRef.current = null;
+      }
+      lastErrorRef.current = null;
     // Reset liveness detection (async without blocking)
     import('../lib/livenessDetection')
       .then(({ resetLivenessDetection }) => {
@@ -484,7 +494,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
             texture: livenessResult.textureAnalysisPassed,
             confidence: livenessResult.confidence,
           });
-          setError(`⏳ ${livenessResult.reasons.find((r: string) => r.includes('⏳')) || 'กำลังตรวจสอบ...'}`);
+          const waitingMsg = `⏳ ${livenessResult.reasons.find((r: string) => r.includes('⏳')) || 'กำลังตรวจสอบ...'}`;
+          // ไม่ต้อง debounce สำหรับ waiting message (แสดงทันที)
+          lastErrorRef.current = waitingMsg;
+          setError(waitingMsg);
           setFaceBox(detection.box);
           setFaceBoxLabel({ isUnknown: true, similarity: 0, hint: 'กระพริบตา' });
           scanInProgressRef.current = false;
@@ -495,7 +508,19 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
           const errorMsg = livenessResult.reasons.length > 0 
             ? `❌ 3D Liveness ไม่ผ่าน: ${livenessResult.reasons.filter((r: string) => !r.includes('⏳')).join('. ')}`
             : '❌ ไม่ผ่านการตรวจสอบ 3D liveness กรุณาใช้ใบหน้าจริงเท่านั้น (ไม่สามารถใช้รูปภาพ 2D ได้)';
-          setError(errorMsg);
+          
+          // Debounce error message — ป้องกันเด้งรัวๆ
+          if (errorDebounceTimerRef.current) {
+            clearTimeout(errorDebounceTimerRef.current);
+          }
+          errorDebounceTimerRef.current = setTimeout(() => {
+            // เปลี่ยน error เฉพาะเมื่อข้อความเปลี่ยนจริงๆ
+            if (lastErrorRef.current !== errorMsg) {
+              lastErrorRef.current = errorMsg;
+              setError(errorMsg);
+            }
+          }, ERROR_DEBOUNCE_MS);
+          
           setFaceBox(detection.box);
           setFaceBoxLabel({ isUnknown: true, similarity: 0 });
           scanInProgressRef.current = false;
@@ -504,7 +529,20 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
           // ผ่าน Liveness แล้ว — ตรวจ "รูปภาพนิ่ง" ครั้งเดียว (ไม่รอ minSec) เพื่อให้เข้า 1–2 วิ
           const notStaticPhoto = checkNotObviouslyStaticPhoto(video, detection.box, true);
           if (!notStaticPhoto) {
-            setError('ตรวจพบรูปภาพนิ่ง กรุณาใช้ใบหน้าจริง');
+            const errorMsg = '❌ 3D Liveness ไม่ผ่าน: ❌ ไม่พบการเปลี่ยนแปลงของภาพ (อาจเป็นรูปภาพนิ่ง) กรุณาใช้ใบหน้าจริง';
+            
+            // Debounce error message — ป้องกันเด้งรัวๆ
+            if (errorDebounceTimerRef.current) {
+              clearTimeout(errorDebounceTimerRef.current);
+            }
+            errorDebounceTimerRef.current = setTimeout(() => {
+              // เปลี่ยน error เฉพาะเมื่อข้อความเปลี่ยนจริงๆ
+              if (lastErrorRef.current !== errorMsg) {
+                lastErrorRef.current = errorMsg;
+                setError(errorMsg);
+              }
+            }, ERROR_DEBOUNCE_MS);
+            
             setFaceBox(detection.box);
             setFaceBoxLabel({ isUnknown: true, similarity: 0, hint: 'กระพริบตา' });
             scanInProgressRef.current = false;
@@ -517,6 +555,12 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
             texture: livenessResult.textureAnalysisPassed,
             confidence: livenessResult.confidence,
           });
+          // Clear error ทันทีเมื่อผ่าน (ไม่ต้อง debounce)
+          if (errorDebounceTimerRef.current) {
+            clearTimeout(errorDebounceTimerRef.current);
+            errorDebounceTimerRef.current = null;
+          }
+          lastErrorRef.current = null;
           setError(null);
           setFaceBox(detection.box);
           setFaceBoxLabel({ isUnknown: true, similarity: 0, hint: 'กำลังจดจำ…' });

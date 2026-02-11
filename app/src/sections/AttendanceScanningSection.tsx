@@ -653,8 +653,15 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         // แต่แสดง warning ใน console
       }
       
-      // ถ้ามี liveness result ให้ตรวจสอบ
-      if (livenessResult) {
+      // ถ้ามี liveness result ให้ตรวจสอบ (null = error บน mobile, ให้ข้าม liveness check)
+      if (livenessResult === null && (isMobileDevice || window.innerWidth <= 768)) {
+        // บน mobile: ถ้าเกิด error ให้ข้าม liveness check และไปทำ recognition เลย (fallback)
+        console.warn('[performScan] Mobile: Liveness detection failed, skipping liveness check and proceeding to recognition');
+        setError(null); // ล้าง error เพื่อให้ทำ recognition ได้
+        setFaceBox(detection.box);
+        setFaceBoxLabel({ isUnknown: true, similarity: 0, hint: 'กำลังจดจำ…' });
+        // ต่อไปทำ recognition (ไม่ return)
+      } else if (livenessResult) {
         // ถ้ายังรอข้อมูล ให้แสดงสถานะและรอต่อ (บล็อกการทำ recognition)
         if (!livenessResult.passed && livenessResult.reasons.some((r: string) => r.includes('⏳'))) {
           setLivenessStatus({

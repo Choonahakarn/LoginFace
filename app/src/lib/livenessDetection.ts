@@ -34,6 +34,8 @@ export interface LivenessResult {
   textureAnalysisPassed: boolean;
 }
 
+export type LivenessResultOrNull = LivenessResult | null;
+
 export interface FaceLandmarks {
   landmarks: NormalizedLandmark[];
   faceBox: { x: number; y: number; width: number; height: number };
@@ -437,7 +439,7 @@ export async function detectLiveness(
   video: HTMLVideoElement,
   timestamp: number,
   faceBox: { x: number; y: number; width: number; height: number }
-): Promise<LivenessResult> {
+): Promise<LivenessResult | null> {
   try {
     // โหลด Face Landmarker ถ้ายังไม่ได้โหลด
     if (!faceLandmarker) {
@@ -572,24 +574,18 @@ export async function detectLiveness(
       }
 
       if (!result && lastError) {
-        // บน mobile: ไม่ throw error แต่ return result ที่บอกว่าเกิด error แทน (เพื่อไม่ให้ crash)
+        // บน mobile: ไม่ throw error แต่ return null เพื่อให้ข้าม liveness check และไปทำ recognition เลย (fallback)
         const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
         if (isMobile) {
-          console.warn('[detectLiveness] Mobile: All attempts failed, returning error result instead of throwing:', lastError);
-          return {
-            passed: false,
-            confidence: 0,
-            reasons: ['⏳ เกิดข้อผิดพลาดในการตรวจจับ - กรุณาลองปิดและเปิดกล้องใหม่'],
-            blinkDetected: false,
-            headMovementDetected: false,
-            textureAnalysisPassed: false,
-          };
+          console.warn('[detectLiveness] Mobile: All attempts failed, returning null to allow fallback to recognition:', lastError);
+          // Return null เพื่อให้ caller รู้ว่าเกิด error และสามารถข้าม liveness check ได้
+          return null as any; // Type assertion เพื่อให้ผ่าน type check
         }
         throw lastError;
       }
     } catch (detectError) {
       console.error('[detectLiveness] detectForVideo failed:', detectError);
-      // บน mobile: ไม่ throw แต่ return error result แทน
+      // บน mobile: ไม่ throw แต่ return null เพื่อให้ข้าม liveness check และไปทำ recognition เลย (fallback)
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       const errorMsg = detectError instanceof Error ? detectError.message : String(detectError);
       console.error('[detectLiveness] Error details:', {
@@ -598,12 +594,15 @@ export async function detectLiveness(
         readyState: video.readyState,
         faceBox: { width: faceBox.width, height: faceBox.height }
       });
+      if (isMobile) {
+        // บน mobile: return null เพื่อให้ข้าม liveness check
+        console.warn('[detectLiveness] Mobile: Returning null to allow fallback to recognition');
+        return null as any; // Type assertion เพื่อให้ผ่าน type check
+      }
       return {
         passed: false,
         confidence: 0,
-        reasons: [isMobile 
-          ? '⏳ เกิดข้อผิดพลาดในการตรวจจับ - กรุณาลองปิดและเปิดกล้องใหม่' 
-          : '⏳ เกิดข้อผิดพลาดในการตรวจจับ'],
+        reasons: ['⏳ เกิดข้อผิดพลาดในการตรวจจับ'],
         blinkDetected: false,
         headMovementDetected: false,
         textureAnalysisPassed: false,

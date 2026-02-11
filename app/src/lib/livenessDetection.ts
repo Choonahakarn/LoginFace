@@ -737,8 +737,7 @@ export async function detectLiveness(
     const blinkDetected = detectBlink(landmarks);
     const headMovementDetected = landmarksHistory.length >= 2 ? detectHeadMovement() : false;
     
-    // Debug logging บน mobile
-    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+    // Debug logging บน mobile (ใช้ isMobile ที่ประกาศไว้แล้วที่ต้น function)
     if (isMobile && landmarksHistory.length % 10 === 0) { // Log ทุก 10 frames
       console.log('[detectLiveness] Mobile: Liveness checks', {
         blinkDetected,
@@ -774,8 +773,7 @@ export async function detectLiveness(
     // ถ้า blink ผ่านแล้ว → ตรวจ texture + frameVariation (บังคับผ่านเพื่อกันรูปภาพ)
     if (blinkDetected && landmarksHistory.length >= 2) {
       // บน mobile: ถ้า blink ผ่านแล้ว ให้ผ่าน texture/frame variation checks ได้ง่ายขึ้น (ไม่บังคับเข้มงวด)
-      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
-      
+      // ใช้ isMobile ที่ประกาศไว้แล้วที่ต้น function
       if (!isMobile) {
         // บน desktop: บังคับให้ frameVariation ผ่าน — รูปภาพมีการเปลี่ยนแปลงไม่ต่อเนื่อง
         if (!frameVariationPassed) {

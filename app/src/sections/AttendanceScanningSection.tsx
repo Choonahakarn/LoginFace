@@ -94,8 +94,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     confidence: number;
   } | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); // 'user' = กล้องหน้า, 'environment' = กล้องหลัง
-  const SCAN_INTERVAL_MS = 5;  // บน mobile: ลดเป็น 5ms เพื่อสแกนถี่มาก (เร็วมาก)
-  const SCAN_COOLDOWN_MS = 10; // ลดจาก 15 เป็น 10
+  const SCAN_INTERVAL_MS = isMobile ? 3 : 5;  // บน mobile: ลดเป็น 3ms เพื่อสแกนถี่มากมาก (เร็วมากมาก)
+  const SCAN_COOLDOWN_MS = isMobile ? 5 : 10; // บน mobile: ลดเป็น 5ms
   /** Reuse face box เพื่อ skip detector บางเฟรม — เพิ่มความเร็ว */
   const lastFaceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const detectorFrameCountRef = useRef<number>(0);
@@ -114,7 +114,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   // Multi-frame verification: เก็บผลการจดจำหลายครั้งก่อนยืนยัน
   const recognitionHistoryRef = useRef<Array<{ studentId: string; similarity: number; timestamp: number }>>([]);
   const REQUIRED_CONSISTENT_MATCHES = 1; // จดจำได้ 1 ครั้งก็ผ่าน — เพิ่มความเร็ว
-  const VERIFICATION_WINDOW_MS = 300; // ลดเวลา window เพื่อเพิ่มความเร็ว
+  const VERIFICATION_WINDOW_MS = isMobile ? 150 : 300; // บน mobile: ลดเป็น 150ms เพื่อความเร็วมาก
   // Debouncing สำหรับ error message — ป้องกันข้อความเด้งรัวๆ
   const lastErrorRef = useRef<string | null>(null);
   const errorDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -759,10 +759,12 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       setFaceBox(detection.box);
       setError(null);
 
-      // ลดขนาดรูปส่ง backend เพื่อเพิ่มความเร็ว: quality 0.65, minSize 140
-      let base64 = captureFaceCropAsBase64(video, detection.box, 0.25, 0.65, 140);
+      // บน mobile: ลด quality เป็น 0.5 เพื่อความเร็วมาก, desktop: 0.65
+      const imageQuality = isMobile ? 0.5 : 0.65;
+      const minSize = isMobile ? 120 : 140;
+      let base64 = captureFaceCropAsBase64(video, detection.box, 0.25, imageQuality, minSize);
       if (!base64) {
-        base64 = captureFrameAsBase64(video, 0.65);
+        base64 = captureFrameAsBase64(video, imageQuality);
       }
       // Cancel previous request if still pending
       if (abortControllerRef.current) {
@@ -799,13 +801,15 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
               r => r.studentId === res.student_id
             );
             
-            // ผ่อนเกณฑ์เพื่อความเร็ว — แต่ยังป้องกันการจดจำผิดคน
-            const MIN_SIMILARITY_THRESHOLD = 0.65; // ลดจาก 0.70 เป็น 0.65 เพื่อเพิ่มความเร็ว
+            // บน mobile: ลด threshold เพื่อความเร็วมาก
+            const MIN_SIMILARITY_THRESHOLD = isMobile ? 0.60 : 0.65; // บน mobile: ลดเป็น 0.60
             
             // ตรวจสอบว่า similarity สูงพอและจดจำได้เหมือนกันหลายครั้ง
             if (sameStudentMatches.length >= REQUIRED_CONSISTENT_MATCHES && res.similarity >= MIN_SIMILARITY_THRESHOLD) {
-              // ผ่อนเกณฑ์: ถ้า similarity ต่ำกว่า 0.75 ต้องจดจำได้อย่างน้อย 2 ครั้ง (ลดจาก 3)
-              const requiredMatches = res.similarity >= 0.75 ? REQUIRED_CONSISTENT_MATCHES : Math.max(REQUIRED_CONSISTENT_MATCHES, 2);
+              // บน mobile: ถ้า similarity >= 0.70 ผ่านเลย (ไม่ต้องรอหลายครั้ง), desktop: >= 0.75
+              const requiredMatches = isMobile 
+                ? (res.similarity >= 0.70 ? REQUIRED_CONSISTENT_MATCHES : Math.max(REQUIRED_CONSISTENT_MATCHES, 2))
+                : (res.similarity >= 0.75 ? REQUIRED_CONSISTENT_MATCHES : Math.max(REQUIRED_CONSISTENT_MATCHES, 2));
               
               if (sameStudentMatches.length >= requiredMatches) {
                 const student = classStudents.find((s) => String(s.id) === String(res.student_id));

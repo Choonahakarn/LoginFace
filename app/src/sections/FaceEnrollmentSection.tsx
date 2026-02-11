@@ -418,7 +418,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   : undefined;
                 const r = await backendFace.testConnectionToBackend(base64);
                 if (r.ok) {
-                  setConnectionTest(`✓ เชื่อมต่อได้ — Backend ตอบปกติ${r.saveImage ? ' บันทึกรูป ✓' : ''}`);
+                  setConnectionTest(`✓ เชื่อมต่อได้ — Backend ตอบปกติ${r.imageReceived ? ' รับรูปภาพได้ ✓' : ''}`);
                 } else {
                   setConnectionTest(`✗ ล้มเหลว: ${r.error || 'ไม่ทราบสาเหตุ'}`);
                 }

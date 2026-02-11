@@ -17,10 +17,10 @@ export async function checkBackendHealth(): Promise<boolean> {
 export async function testConnection(imageBase64?: string): Promise<{
   ok: boolean;
   health: boolean;
-  saveImage: boolean | null;
+  imageReceived: boolean | null;
   error?: string;
 }> {
-  const result: { ok: boolean; health: boolean; saveImage: boolean | null; error?: string } = { ok: false, health: false, saveImage: null };
+  const result: { ok: boolean; health: boolean; imageReceived: boolean | null; error?: string } = { ok: false, health: false, imageReceived: null };
   try {
     const healthRes = await fetch(`${API_BASE}/api/health`);
     result.health = healthRes.ok;
@@ -30,20 +30,21 @@ export async function testConnection(imageBase64?: string): Promise<{
     }
     if (imageBase64) {
       try {
-        const saveRes = await fetch(`${API_BASE}/api/face/debug-image`, {
+        // ทดสอบว่า backend รับรูปภาพได้หรือไม่ (ไม่บันทึกลง disk เพื่อความปลอดภัย)
+        const testRes = await fetch(`${API_BASE}/api/face/debug-image`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: imageBase64 }),
         });
-        const saveData = await saveRes.json().catch(() => ({}));
-        result.saveImage = saveRes.ok && !saveData.error;
-        if (!result.saveImage) result.error = (result.error || '') + ` | บันทึกรูป: ${saveData.error || 'ไม่สำเร็จ'}`;
+        const testData = await testRes.json().catch(() => ({}));
+        result.imageReceived = testRes.ok && testData.ok !== false;
+        if (!result.imageReceived) result.error = (result.error || '') + ` | รับรูปภาพ: ${testData.error || 'ไม่สำเร็จ'}`;
       } catch {
-        result.saveImage = false;
-        result.error = (result.error || '') + ' | บันทึกรูป: network error';
+        result.imageReceived = false;
+        result.error = (result.error || '') + ' | รับรูปภาพ: network error';
       }
     }
-    result.ok = result.health && (result.saveImage !== false);
+    result.ok = result.health && (result.imageReceived !== false);
   } catch (e) {
     result.error = e instanceof Error ? e.message : String(e);
   }

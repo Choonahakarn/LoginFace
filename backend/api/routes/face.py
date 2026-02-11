@@ -91,18 +91,17 @@ def ping():
 
 @router.post("/debug-image")
 def debug_image(req: DebugImageRequest):
-    """บันทึกรูปที่ได้รับไว้ที่ backend/data/debug.jpg เพื่อตรวจสอบ"""
+    """ทดสอบว่า backend สามารถรับรูปภาพได้ (ไม่บันทึกลง disk เพื่อความปลอดภัย)"""
     try:
         s = req.image_base64.strip()
         if "," in s and s.startswith("data:"):
             s = s.split(",", 1)[1]
         raw = base64.b64decode(s, validate=False)
-        path = os.path.join(DATA_DIR, "debug_last.jpg")
-        with open(path, "wb") as f:
-            f.write(raw)
-        return {"saved": path, "size_bytes": len(raw)}
+        # ไม่บันทึกรูปภาพลง disk เพื่อความปลอดภัยและความเป็นส่วนตัวของนักเรียน
+        # แค่ตรวจสอบว่า decode ได้หรือไม่
+        return {"ok": True, "size_bytes": len(raw), "message": "รูปภาพรับได้ (ไม่บันทึกเพื่อความปลอดภัย)"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"ok": False, "error": str(e)}
 
 
 @router.post("/debug-extract")
@@ -124,17 +123,8 @@ def enroll(req: EnrollRequest):
         result = get_embedding_from_base64(req.image_base64, preferred_models=preferred_models)
         if not result:
             debug = get_embedding_from_base64_debug(req.image_base64)
-            try:
-                s = req.image_base64.strip()
-                if "," in s and s.startswith("data:"):
-                    s = s.split(",", 1)[1]
-                raw = base64.b64decode(s, validate=False)
-                path = os.path.join(DATA_DIR, "debug_fail.jpg")
-                with open(path, "wb") as f:
-                    f.write(raw)
-                debug["debug_fail_saved"] = path
-            except Exception:
-                pass
+            # ไม่บันทึกรูปภาพลง disk เพื่อความปลอดภัยและความเป็นส่วนตัวของนักเรียน
+            # มี debug info ใน response แล้ว (image_dims, errors)
             return JSONResponse(status_code=400, content={"detail": "ไม่พบใบหน้าในภาพ", "debug": debug})
         emb, conf = result
         if existing_dim and len(emb) != existing_dim:

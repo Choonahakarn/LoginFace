@@ -184,9 +184,9 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
   
   if (landmarksHistory.length < 2) return false; // ต้องมีอย่างน้อย 2 เฟรม
   
-  // บน mobile: ดู 10 เฟรมล่าสุด (เร็วขึ้น), desktop: 15 เฟรม
+  // บน mobile: ดู 6 เฟรมล่าสุด (เร็วมาก), desktop: 15 เฟรม
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
-  const historyLength = isMobile ? 10 : 15;
+  const historyLength = isMobile ? 6 : 15;
   const recentEARs = landmarksHistory.slice(-historyLength).map(h => {
     const left = calculateEAR(h.landmarks, LEFT_EYE_POINTS);
     const right = calculateEAR(h.landmarks, RIGHT_EYE_POINTS);
@@ -400,19 +400,20 @@ function analyzeTexture(
   // - Higher variance (more texture)
   // - Higher edge density (more details)
   // - Higher local variance (more depth variation)
-  // สมดุล: กันรูปภาพทุกประเภท (นิ่ง, เอียง, เปลี่ยนมุมแสง) แต่ไม่เข้มงวดเกินไป
-  const VARIANCE_THRESHOLD = 290;  // สมดุล — รูปภาพมักมี variance ต่ำกว่า
-  const EDGE_DENSITY_THRESHOLD = 0.17;  // สมดุล — รูปภาพมักมี edge น้อยกว่า
-  const LOCAL_VARIANCE_THRESHOLD = 170;  // สมดุล — รูปภาพมักมี local variance ต่ำกว่า
+  // บน mobile: ลด threshold เพื่อให้ผ่านเร็วขึ้น แต่ยังป้องกันรูปภาพได้
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  const VARIANCE_THRESHOLD = isMobile ? 250 : 290;  // บน mobile: ลดจาก 290 เป็น 250
+  const EDGE_DENSITY_THRESHOLD = isMobile ? 0.14 : 0.17;  // บน mobile: ลดจาก 0.17 เป็น 0.14
+  const LOCAL_VARIANCE_THRESHOLD = isMobile ? 150 : 170;  // บน mobile: ลดจาก 170 เป็น 150
   
   const variancePass = variance > VARIANCE_THRESHOLD;
   const edgePass = edgeDensity > EDGE_DENSITY_THRESHOLD;
   const localVariancePass = avgLocalVariance > LOCAL_VARIANCE_THRESHOLD;
   
-  // สมดุล: ต้องผ่านอย่างน้อย 2 ใน 3 การตรวจสอบ หรือผ่าน variance (สำคัญที่สุด)
+  // บน mobile: ต้องผ่านอย่างน้อย 1 ใน 3 (เร็วมาก), desktop: 2 ใน 3
   const checksPassed = [variancePass, edgePass, localVariancePass].filter(Boolean).length;
-  // ต้องผ่านอย่างน้อย 2/3 หรือผ่าน variance (สำคัญที่สุด)
-  return checksPassed >= 2 || (checksPassed >= 1 && variancePass);
+  // บน mobile: ผ่านอย่างน้อย 1/3 หรือผ่าน variance (สำคัญที่สุด), desktop: 2/3 หรือ variance
+  return isMobile ? (checksPassed >= 1 || variancePass) : (checksPassed >= 2 || (checksPassed >= 1 && variancePass));
 }
 
 /**
@@ -971,10 +972,15 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   frameHistory.push({ timestamp: now, frameHash });
   framePixelHistory.push({ timestamp: now, pixelVariance: variance });
   
-  frameHistory = frameHistory.slice(-12);
-  framePixelHistory = framePixelHistory.slice(-12);
+  // บน mobile: เก็บแค่ 8 เฟรม (เร็วขึ้น), desktop: 12 เฟรม
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  const historySize = isMobile ? 8 : 12;
+  frameHistory = frameHistory.slice(-historySize);
+  framePixelHistory = framePixelHistory.slice(-historySize);
   
-  if (frameHistory.length < 3) return false; // 3 เฟรมพอ (เร็วขึ้น)
+  // บน mobile: รอแค่ 2 เฟรม (เร็วมาก), desktop: 3 เฟรม
+  const minFrames = isMobile ? 2 : 3;
+  if (frameHistory.length < minFrames) return false;
   
   // Check if frames are actually changing (hash-based)
   const uniqueHashes = new Set(frameHistory.map(f => f.frameHash));
@@ -1003,7 +1009,7 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   
   // การเปลี่ยนแปลงจริงควรมี coefficient ต่ำ (เปลี่ยนแปลงแบบสม่ำเสมอ)
   // รูปภาพที่หมุน/เอียงจะมี coefficient สูง (เปลี่ยนแปลงแบบกระตุก)
-  const isSmoothVarianceChange = changeCoefficient < 1.8 || avgChange < 4; // เข้มงวดขึ้น — จับการกระตุกได้ดีขึ้น
+  const isSmoothVarianceChange = changeCoefficient < (isMobile ? 2.0 : 1.8) || avgChange < (isMobile ? 3 : 4); // บน mobile: ผ่อนขึ้นเล็กน้อย
   
   // รูปภาพที่หมุน/เอียงมักมี:
   // 1. variationRatio ต่ำ (hash เปลี่ยนน้อย)
@@ -1011,8 +1017,8 @@ function checkFrameVariation(video: HTMLVideoElement, faceBox: { x: number; y: n
   // 3. variance เปลี่ยนแปลงแบบกระตุก (coefficient สูง)
   // 4. การเปลี่ยนแปลงไม่ต่อเนื่อง
   
-  // สมดุล: บังคับให้มีการเปลี่ยนแปลง (กันรูปภาพ) แต่ไม่เข้มงวดเกินไป
-  const hashVariationPass = variationRatio > 0.50; // สมดุล — รูปภาพนิ่งมี hash เปลี่ยนน้อยมาก
+  // บน mobile: ลด threshold เพื่อให้ผ่านเร็วขึ้น
+  const hashVariationPass = variationRatio > (isMobile ? 0.40 : 0.50); // บน mobile: ลดจาก 0.50 เป็น 0.40
   const varianceVariationPass = varianceCoefficient > 0.15; // สมดุล — รูปภาพมี variance คงที่
   const varianceStdDevPass = varianceStdDev > 18; // สมดุล — รูปภาพมี variance std dev ต่ำ
   const smoothChangePass = isSmoothVarianceChange; // ต้องเป็นการเปลี่ยนแปลงแบบต่อเนื่อง

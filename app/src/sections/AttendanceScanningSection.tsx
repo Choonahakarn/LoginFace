@@ -94,12 +94,13 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
     confidence: number;
   } | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); // 'user' = กล้องหน้า, 'environment' = กล้องหลัง
-  const SCAN_INTERVAL_MS = 8;  // ลดจาก 12 เป็น 8 — สแกนถี่มาก (ทันที)
-  const SCAN_COOLDOWN_MS = 15; // ลดจาก 20 เป็น 15
+  const SCAN_INTERVAL_MS = 5;  // บน mobile: ลดเป็น 5ms เพื่อสแกนถี่มาก (เร็วมาก)
+  const SCAN_COOLDOWN_MS = 10; // ลดจาก 15 เป็น 10
   /** Reuse face box เพื่อ skip detector บางเฟรม — เพิ่มความเร็ว */
   const lastFaceBoxRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const detectorFrameCountRef = useRef<number>(0);
-  const DETECTOR_SKIP_FRAMES = 1; // รัน detector ทุก 2 เฟรม (0, 2, 4, ...) — เร็วขึ้น
+  const isMobile = isMobileDevice || window.innerWidth <= 768;
+  const DETECTOR_SKIP_FRAMES = isMobile ? 0 : 1; // บน mobile: รัน detector ทุกเฟรม (0 = ไม่ skip), desktop: ทุก 2 เฟรม
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);

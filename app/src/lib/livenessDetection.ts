@@ -491,13 +491,13 @@ export async function detectLiveness(
     }
     
     let result: { faceLandmarks?: unknown[] } | undefined;
+    const attempts = isMobile ? 3 : 1; // บน mobile ลดจาก 5 เป็น 3 เพื่อความเร็ว (ถ้าเจอครั้งแรกก็ break แล้ว)
     try {
       const useFaceCrop = isMobile && faceBox.width > 10 && faceBox.height > 10;
       const inputSource: HTMLVideoElement | HTMLCanvasElement = useFaceCrop
         ? drawFaceCropToCanvas(video, faceBox)
         : video;
 
-      const attempts = isMobile ? 3 : 1; // บน mobile ลดจาก 5 เป็น 3 เพื่อความเร็ว (ถ้าเจอครั้งแรกก็ break แล้ว)
       let lastError: Error | null = null;
 
       for (let attempt = 0; attempt < attempts; attempt++) {

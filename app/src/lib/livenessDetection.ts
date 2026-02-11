@@ -50,7 +50,7 @@ const RIGHT_EYE_POINTS = [362, 385, 387, 263, 373, 380];
 const FACE_OUTLINE_INDICES = [10, 151, 9, 175, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
 let landmarksHistory: Array<{ timestamp: number; landmarks: NormalizedLandmark[] }> = [];
-const MAX_HISTORY = 25; // เก็บแค่ 25 frames เพื่อความเร็ว (เพียงพอสำหรับ liveness)
+const MAX_HISTORY = 20; // ลดจาก 25 เป็น 20 frames เพื่อความเร็ว (เพียงพอสำหรับ liveness)
 let frameHistory: Array<{ timestamp: number; frameHash: string }> = []; // เก็บ hash ของ frame เพื่อตรวจสอบการเปลี่ยนแปลง
 let framePixelHistory: Array<{ timestamp: number; pixelVariance: number }> = []; // เก็บ variance ของ pixel เพื่อตรวจสอบการเปลี่ยนแปลง
 
@@ -184,8 +184,10 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
   
   if (landmarksHistory.length < 2) return false; // ต้องมีอย่างน้อย 2 เฟรม
   
-  // ดู 15 เฟรมล่าสุด — เพียงพอสำหรับการตรวจสอบ
-  const recentEARs = landmarksHistory.slice(-15).map(h => {
+  // บน mobile: ดู 10 เฟรมล่าสุด (เร็วขึ้น), desktop: 15 เฟรม
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  const historyLength = isMobile ? 10 : 15;
+  const recentEARs = landmarksHistory.slice(-historyLength).map(h => {
     const left = calculateEAR(h.landmarks, LEFT_EYE_POINTS);
     const right = calculateEAR(h.landmarks, RIGHT_EYE_POINTS);
     const avg = (left + right) / 2;
@@ -286,13 +288,14 @@ function detectHeadMovement(): boolean {
   const movementCoefficient = movementStdDev / (avgMovement + 0.1);
   const isSmoothMovement = movementCoefficient < 1.3;
   
-  // ลด threshold เป็น 3 องศา — ขยับนิดเดียวก็ผ่าน (ใบหน้าจริง) รูปภาพเอียงจะกระตุก
-  const MOVEMENT_THRESHOLD = 3;
+  // บน mobile: ลด threshold เป็น 2 องศา (เร็วขึ้น), desktop: 3 องศา
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  const MOVEMENT_THRESHOLD = isMobile ? 2 : 3;
   const hasSignificantMovement =
     (yawDiff > MOVEMENT_THRESHOLD || pitchDiff > MOVEMENT_THRESHOLD || rollDiff > MOVEMENT_THRESHOLD) &&
     (yawDiffMid > MOVEMENT_THRESHOLD / 2 || pitchDiffMid > MOVEMENT_THRESHOLD / 2);
   
-  const hasContinuousMovement = avgMovement > 0.3 && isSmoothMovement; // ลดจาก 0.5 เป็น 0.3
+  const hasContinuousMovement = avgMovement > (isMobile ? 0.2 : 0.3) && isSmoothMovement; // บน mobile: 0.2 (เร็วขึ้น)
   return hasSignificantMovement && hasContinuousMovement;
 }
 
@@ -493,17 +496,17 @@ export async function detectLiveness(
         ? drawFaceCropToCanvas(video, faceBox)
         : video;
 
-      const attempts = isMobile ? 5 : 1; // บน mobile ลองหลายครั้ง + สลับ full video ถ้า crop ไม่เจอ
+      const attempts = isMobile ? 3 : 1; // บน mobile ลดจาก 5 เป็น 3 เพื่อความเร็ว (ถ้าเจอครั้งแรกก็ break แล้ว)
       let lastError: Error | null = null;
 
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           if (isMobile && attempt > 0) {
-            await new Promise(resolve => setTimeout(resolve, 80 * attempt));
+            await new Promise(resolve => setTimeout(resolve, 30 * attempt)); // ลด delay จาก 80ms เป็น 30ms
           }
 
-          // บน mobile: บาง attempt ลองทั้ง crop และ full video
-          const source = (isMobile && attempt >= 2 && useFaceCrop) ? video : inputSource;
+          // บน mobile: บาง attempt ลองทั้ง crop และ full video (เริ่มที่ attempt 1 แทน 2 เพื่อเร็วขึ้น)
+          const source = (isMobile && attempt >= 1 && useFaceCrop) ? video : inputSource;
           result = faceLandmarker.detectForVideo(source, timestamp);
 
           if (result?.faceLandmarks?.length) {
@@ -519,8 +522,8 @@ export async function detectLiveness(
             }
             break;
           } else {
-            // ไม่มี landmarks — บน mobile log เพื่อ debug
-            if (isMobile) {
+            // ไม่มี landmarks — บน mobile log เพื่อ debug (ลดความถี่)
+            if (isMobile && attempt % 2 === 0) { // Log เฉพาะ attempt คู่
               console.log(`[detectLiveness] Mobile: Attempt ${attempt + 1}/${attempts} - No landmarks`, {
                 useFaceCrop,
                 usedFullVideo: source === video,
@@ -529,9 +532,9 @@ export async function detectLiveness(
               });
             }
           }
-          // ไม่มี landmarks — บน mobile ลองใช้ full video ในรอบถัดไป
+          // ไม่มี landmarks — บน mobile ลองใช้ full video ในรอบถัดไป (ลด delay)
           if (isMobile && attempt < attempts - 1) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 20)); // ลดจาก 50ms เป็น 20ms
           }
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
@@ -539,7 +542,7 @@ export async function detectLiveness(
             console.warn(`[detectLiveness] Mobile: Attempt ${attempt + 1} failed:`, err);
           }
           if (attempt < attempts - 1) {
-            await new Promise(resolve => setTimeout(resolve, 80));
+            await new Promise(resolve => setTimeout(resolve, 30)); // ลด delay จาก 80ms เป็น 30ms
           }
         }
       }

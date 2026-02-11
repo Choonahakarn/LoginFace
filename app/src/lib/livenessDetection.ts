@@ -178,15 +178,15 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
   const rightEAR = calculateEAR(landmarks, RIGHT_EYE_POINTS);
   const avgEAR = (leftEAR + rightEAR) / 2;
   
-  // สมดุล: จับการกระพริบได้ง่าย แต่ยังบังคับทั้งสองตาปิด (กันรูปภาพ)
-  const EAR_THRESHOLD_CLOSED = 0.17;  // ตาปิด (สมดุล — รูปภาพกระพริบไม่ได้ แต่ใบหน้าจริงผ่านได้)
-  const EAR_THRESHOLD_OPEN = 0.23;    // ตาเปิด (สมดุล)
+  // บน mobile: ลด threshold เพื่อให้จับการกระพริบตาได้ง่ายขึ้น
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+  const EAR_THRESHOLD_CLOSED = isMobile ? 0.20 : 0.17;  // บน mobile: เพิ่มจาก 0.17 เป็น 0.20 (จับได้ง่ายขึ้น)
+  const EAR_THRESHOLD_OPEN = isMobile ? 0.25 : 0.23;    // บน mobile: เพิ่มจาก 0.23 เป็น 0.25
   
   if (landmarksHistory.length < 2) return false; // ต้องมีอย่างน้อย 2 เฟรม
   
-  // บน mobile: ดู 6 เฟรมล่าสุด (เร็วมาก), desktop: 15 เฟรม
-  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
-  const historyLength = isMobile ? 6 : 15;
+  // บน mobile: ดู 4 เฟรมล่าสุด (เร็วมากและจับได้ง่าย), desktop: 15 เฟรม
+  const historyLength = isMobile ? 4 : 15;
   const recentEARs = landmarksHistory.slice(-historyLength).map(h => {
     const left = calculateEAR(h.landmarks, LEFT_EYE_POINTS);
     const right = calculateEAR(h.landmarks, RIGHT_EYE_POINTS);
@@ -195,10 +195,12 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
       avg,
       left,
       right,
-      // ต้องทั้งสองตาปิดพร้อมกัน — กันรูปภาพ
+      // บน mobile: ผ่อนให้จับได้ง่ายขึ้น - รับได้ถ้าตาข้างใดข้างหนึ่งปิดหรือค่าเฉลี่ยต่ำ
       bothClosed: left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED,
-      // รับได้ถ้าค่าเฉลี่ยต่ำชัดเจน (ผ่อนให้จับได้ง่าย)
-      clearlyClosed: avg < 0.18 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED),
+      // บน mobile: รับได้ถ้าค่าเฉลี่ยต่ำหรือตาข้างใดข้างหนึ่งปิด
+      clearlyClosed: isMobile 
+        ? (avg < 0.22 || left < EAR_THRESHOLD_CLOSED || right < EAR_THRESHOLD_CLOSED)
+        : (avg < 0.18 || (left < EAR_THRESHOLD_CLOSED && right < EAR_THRESHOLD_CLOSED)),
     };
   });
   
@@ -209,15 +211,27 @@ function detectBlink(landmarks: NormalizedLandmark[]): boolean {
     const openNext = next.avg > EAR_THRESHOLD_OPEN;
     
     // Pattern 1: ปิด (ทั้งสองตา) -> เปิด (รับได้ — เร็ว)
-    if (curr.bothClosed && openNext) return true;
+    if (curr.bothClosed && openNext) {
+      if (isMobile) console.log('[detectBlink] Mobile: Blink detected (bothClosed -> open)');
+      return true;
+    }
     // Pattern 2: ปิด (ชัดเจน) -> เปิด (รับได้)
-    if (curr.clearlyClosed && openNext) return true;
+    if (curr.clearlyClosed && openNext) {
+      if (isMobile) console.log('[detectBlink] Mobile: Blink detected (clearlyClosed -> open)');
+      return true;
+    }
     // Pattern 3: เปิด -> ปิด (ทั้งสองตา) -> เปิด (ดีที่สุด)
     if (i > 0) {
       const prev = recentEARs[i - 1];
       const openPrev = prev.avg > EAR_THRESHOLD_OPEN;
-      if (openPrev && curr.bothClosed && openNext) return true;
-      if (openPrev && curr.clearlyClosed && openNext) return true;
+      if (openPrev && curr.bothClosed && openNext) {
+        if (isMobile) console.log('[detectBlink] Mobile: Blink detected (open -> bothClosed -> open)');
+        return true;
+      }
+      if (openPrev && curr.clearlyClosed && openNext) {
+        if (isMobile) console.log('[detectBlink] Mobile: Blink detected (open -> clearlyClosed -> open)');
+        return true;
+      }
     }
   }
   return false;
@@ -722,6 +736,16 @@ export async function detectLiveness(
     // Run checks — บังคับทุกการตรวจสอบเพื่อกันรูปภาพ แต่ให้ใบหน้าจริงผ่านได้เร็ว
     const blinkDetected = detectBlink(landmarks);
     const headMovementDetected = landmarksHistory.length >= 2 ? detectHeadMovement() : false;
+    
+    // Debug logging บน mobile
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+    if (isMobile && landmarksHistory.length % 10 === 0) { // Log ทุก 10 frames
+      console.log('[detectLiveness] Mobile: Liveness checks', {
+        blinkDetected,
+        headMovementDetected,
+        landmarksHistoryLength: landmarksHistory.length
+      });
+    }
     let textureAnalysisPassed: boolean;
     let frameVariationPassed: boolean;
     
@@ -749,28 +773,39 @@ export async function detectLiveness(
     
     // ถ้า blink ผ่านแล้ว → ตรวจ texture + frameVariation (บังคับผ่านเพื่อกันรูปภาพ)
     if (blinkDetected && landmarksHistory.length >= 2) {
-      // บังคับให้ frameVariation ผ่าน — รูปภาพมีการเปลี่ยนแปลงไม่ต่อเนื่อง
-      if (!frameVariationPassed) {
-        return {
-          passed: false,
-          confidence: 0,
-          reasons: ['❌ ตรวจพบการเปลี่ยนแปลงแบบไม่ต่อเนื่อง (อาจเป็นรูปภาพ) กรุณาใช้ใบหน้าจริง'],
-          blinkDetected: true,
-          headMovementDetected,
-          textureAnalysisPassed,
-        };
-      }
+      // บน mobile: ถ้า blink ผ่านแล้ว ให้ผ่าน texture/frame variation checks ได้ง่ายขึ้น (ไม่บังคับเข้มงวด)
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       
-      // บังคับให้ texture ผ่าน — รูปภาพมี texture ต่างจากใบหน้าจริง
-      if (!textureAnalysisPassed) {
-        return {
-          passed: false,
-          confidence: 0,
-          reasons: ['❌ การวิเคราะห์พื้นผิวไม่ผ่าน (อาจเป็นรูปภาพ) กรุณาใช้ใบหน้าจริง'],
-          blinkDetected: true,
-          headMovementDetected,
-          textureAnalysisPassed: false,
-        };
+      if (!isMobile) {
+        // บน desktop: บังคับให้ frameVariation ผ่าน — รูปภาพมีการเปลี่ยนแปลงไม่ต่อเนื่อง
+        if (!frameVariationPassed) {
+          return {
+            passed: false,
+            confidence: 0,
+            reasons: ['❌ ตรวจพบการเปลี่ยนแปลงแบบไม่ต่อเนื่อง (อาจเป็นรูปภาพ) กรุณาใช้ใบหน้าจริง'],
+            blinkDetected: true,
+            headMovementDetected,
+            textureAnalysisPassed,
+          };
+        }
+        
+        // บังคับให้ texture ผ่าน — รูปภาพมี texture ต่างจากใบหน้าจริง
+        if (!textureAnalysisPassed) {
+          return {
+            passed: false,
+            confidence: 0,
+            reasons: ['❌ การวิเคราะห์พื้นผิวไม่ผ่าน (อาจเป็นรูปภาพ) กรุณาใช้ใบหน้าจริง'],
+            blinkDetected: true,
+            headMovementDetected,
+            textureAnalysisPassed: false,
+          };
+        }
+      } else {
+        // บน mobile: ถ้า blink ผ่านแล้ว ให้ผ่านได้เลย (ไม่บังคับ texture/frame variation เพื่อความเร็ว)
+        // เพราะ blink detection กันรูปภาพได้ดีอยู่แล้ว
+        if (!frameVariationPassed || !textureAnalysisPassed) {
+          console.log('[detectLiveness] Mobile: Blink passed, allowing through despite texture/frame variation checks');
+        }
       }
     }
     

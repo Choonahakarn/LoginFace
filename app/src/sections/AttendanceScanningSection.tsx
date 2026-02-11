@@ -321,10 +321,10 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         console.warn('Failed to load face landmarker:', err);
         // Continue without advanced liveness detection
       }
-      // ปรับ resolution ตาม device: mobile ใช้ 960x720 (เพิ่มขึ้นเพื่อให้ Face Landmarker ทำงานได้ดีขึ้น), desktop ใช้ 1280x720
+      // ปรับ resolution ตาม device: mobile ใช้ 640x480 (เร็วและพอใช้), desktop ใช้ 1280x720
       const isMobile = isMobileDevice || window.innerWidth <= 768;
       const videoConstraints = isMobile
-        ? { width: { ideal: 960 }, height: { ideal: 720 }, facingMode: facingModeToUse } // Mobile: เพิ่ม resolution เป็น 960x720 เพื่อให้ Face Landmarker ตรวจจับได้ดีขึ้น
+        ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: facingModeToUse } // Mobile: ใช้ 640x480 เพื่อความเร็วและบางครั้ง landmarker ทำงานได้ดีกว่าด้วย resolution ต่ำกว่า
         : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: facingModeToUse };
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
@@ -624,7 +624,25 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
         }
         
         if (!livenessErrorOccurred) {
+          const isMobile = isMobileDevice || window.innerWidth <= 768;
+          if (isMobile) {
+            console.log('[performScan] Mobile: Calling detectLiveness', {
+              faceBox: detection.box,
+              videoSize: `${video.videoWidth}x${video.videoHeight}`,
+              readyState: video.readyState,
+              timestamp: ts
+            });
+          }
           livenessResult = await detectLiveness(video, ts, detection.box);
+          if (isMobile) {
+            console.log('[performScan] Mobile: detectLiveness result', {
+              passed: livenessResult.passed,
+              reasons: livenessResult.reasons,
+              blinkDetected: livenessResult.blinkDetected,
+              headMovementDetected: livenessResult.headMovementDetected,
+              textureAnalysisPassed: livenessResult.textureAnalysisPassed
+            });
+          }
         }
       } catch (livenessError) {
         // ถ้า liveness detection ล้มเหลว ให้แสดง warning แต่ไม่บล็อก (fallback)

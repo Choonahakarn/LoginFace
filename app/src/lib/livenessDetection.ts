@@ -508,13 +508,26 @@ export async function detectLiveness(
 
           if (result?.faceLandmarks?.length) {
             if (isMobile) {
-              console.log('[detectLiveness] Mobile: Face landmarks OK', {
+              console.log('[detectLiveness] Mobile: Face landmarks detected successfully!', {
                 useFaceCrop,
                 usedFullVideo: source === video,
                 attempt: attempt + 1,
+                landmarksCount: result.faceLandmarks.length,
+                videoSize: `${video.videoWidth}x${video.videoHeight}`,
+                sourceType: source === video ? 'fullVideo' : 'faceCrop'
               });
             }
             break;
+          } else {
+            // ไม่มี landmarks — บน mobile log เพื่อ debug
+            if (isMobile) {
+              console.log(`[detectLiveness] Mobile: Attempt ${attempt + 1}/${attempts} - No landmarks`, {
+                useFaceCrop,
+                usedFullVideo: source === video,
+                videoSize: `${video.videoWidth}x${video.videoHeight}`,
+                faceBox: { width: faceBox.width, height: faceBox.height }
+              });
+            }
           }
           // ไม่มี landmarks — บน mobile ลองใช้ full video ในรอบถัดไป
           if (isMobile && attempt < attempts - 1) {
@@ -555,11 +568,14 @@ export async function detectLiveness(
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
       
       if (isMobile) {
-        console.warn('[detectLiveness] Mobile: No face landmarks detected', {
+        console.warn('[detectLiveness] Mobile: No face landmarks detected after all attempts', {
           videoSize: `${video.videoWidth}x${video.videoHeight}`,
           readyState: video.readyState,
           hasResult: !!result,
-          landmarksCount: result?.faceLandmarks?.length ?? 0
+          landmarksCount: result?.faceLandmarks?.length ?? 0,
+          faceBox: { width: faceBox.width, height: faceBox.height },
+          attempts: attempts,
+          useFaceCrop: isMobile && faceBox.width > 10 && faceBox.height > 10
         });
       }
       

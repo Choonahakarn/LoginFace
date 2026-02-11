@@ -506,6 +506,15 @@ export async function detectLiveness(
             await new Promise(resolve => setTimeout(resolve, 30 * attempt)); // ลด delay จาก 80ms เป็น 30ms
           }
 
+          // ตรวจสอบว่า video พร้อมหรือไม่ก่อนเรียก detectForVideo (ป้องกัน error)
+          if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+            if (isMobile && attempt < attempts - 1) {
+              await new Promise(resolve => setTimeout(resolve, 50)); // รอให้ video พร้อม
+              continue; // ลอง attempt ถัดไป
+            }
+            throw new Error('Video not ready');
+          }
+
           // บน mobile: บาง attempt ลองทั้ง crop และ full video (เริ่มที่ attempt 1 แทน 2 เพื่อเร็วขึ้น)
           const source = (isMobile && attempt >= 1 && useFaceCrop) ? video : inputSource;
           result = faceLandmarker.detectForVideo(source, timestamp);
@@ -549,12 +558,32 @@ export async function detectLiveness(
       }
 
       if (!result && lastError) {
+        // บน mobile: ไม่ throw error แต่ return result ที่บอกว่าเกิด error แทน (เพื่อไม่ให้ crash)
+        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+        if (isMobile) {
+          console.warn('[detectLiveness] Mobile: All attempts failed, returning error result instead of throwing:', lastError);
+          return {
+            passed: false,
+            confidence: 0,
+            reasons: ['⏳ เกิดข้อผิดพลาดในการตรวจจับ - กรุณาลองปิดและเปิดกล้องใหม่'],
+            blinkDetected: false,
+            headMovementDetected: false,
+            textureAnalysisPassed: false,
+          };
+        }
         throw lastError;
       }
     } catch (detectError) {
       console.error('[detectLiveness] detectForVideo failed:', detectError);
-      // บน mobile อาจเกิด error บ่อยกว่า - ให้ fallback ที่ดีขึ้น
+      // บน mobile: ไม่ throw แต่ return error result แทน
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 1024;
+      const errorMsg = detectError instanceof Error ? detectError.message : String(detectError);
+      console.error('[detectLiveness] Error details:', {
+        error: errorMsg,
+        videoSize: `${video.videoWidth}x${video.videoHeight}`,
+        readyState: video.readyState,
+        faceBox: { width: faceBox.width, height: faceBox.height }
+      });
       return {
         passed: false,
         confidence: 0,

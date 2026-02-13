@@ -4,7 +4,7 @@
  */
 
 /** เวอร์ชันแอป */
-export const APP_VERSION = 'v.1.0';
+export const APP_VERSION = 'v.1.1';
 
 /** คีย์สำหรับเก็บข้อมูลใน localStorage */
 export const STORAGE_KEYS = {

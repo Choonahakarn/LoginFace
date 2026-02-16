@@ -66,6 +66,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
   const [enrolledIdsLoaded, setEnrolledIdsLoaded] = useState(false); // Track if we've attempted to load
   const fetchCompletedRef = useRef<boolean>(false); // Track if fetch has actually completed
+  const hasFetchedRef = useRef<boolean>(false); // Track if we've ever fetched for this classId
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
@@ -76,12 +77,14 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     setEnrolledIdsLoaded(false);
     setEnrolledIds([]); // Clear previous data when classId changes
     fetchCompletedRef.current = false; // Reset fetch completion flag
+    hasFetchedRef.current = false; // Reset fetch tracking
     
     if (!classId) {
       setEnrolledIds([]);
       setEnrolledIdsLoading(false);
       setEnrolledIdsLoaded(false);
       fetchCompletedRef.current = false;
+      hasFetchedRef.current = false;
       return;
     }
     
@@ -94,6 +97,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       setEnrolledIdsLoading(false);
       setEnrolledIdsLoaded(true); // Mark as loaded
       fetchCompletedRef.current = true; // Mark fetch as completed
+      hasFetchedRef.current = true; // Mark that we've fetched
       // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
@@ -107,6 +111,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       // No cache or expired - fetch immediately
       setEnrolledIdsLoading(true);
       fetchCompletedRef.current = false;
+      hasFetchedRef.current = false;
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
@@ -114,29 +119,28 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           setEnrolledIdsLoading(false);
           setEnrolledIdsLoaded(true); // Mark as loaded
           fetchCompletedRef.current = true; // Mark fetch as completed
+          hasFetchedRef.current = true; // Mark that we've fetched
         })
         .catch(() => {
           setEnrolledIds([]);
           setEnrolledIdsLoading(false);
           setEnrolledIdsLoaded(true); // Mark as loaded even on error (so we know we tried)
           fetchCompletedRef.current = true; // Mark fetch as completed even on error
+          hasFetchedRef.current = true; // Mark that we've fetched even on error
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
   // Only calculate enrolledStudents when fetch has actually completed
   // This prevents showing incorrect count during initial render
-  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current)
+  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current && hasFetchedRef.current)
     ? classStudents.filter(s => enrolledIds.includes(s.id))
     : [];
   
-  // Only calculate when fetch has actually completed
-  // fetchCompletedRef ensures we've actually received data from the backend, not just initialized
-  // IMPORTANT: Must check fetchCompletedRef.current FIRST to prevent showing classStudents.length
-  // If fetchCompletedRef.current is false, we haven't fetched yet, so show loading
-  // If enrolledIds is empty array but we have students, we need to wait for fetch to complete
-  // Only calculate when we're sure the fetch has completed (fetchCompletedRef.current === true)
-  const notEnrolledCount = (!fetchCompletedRef.current || !enrolledIdsLoaded || enrolledIdsLoading)
+  // Only calculate when fetch has actually completed AND we've fetched at least once
+  // hasFetchedRef ensures we've actually made a fetch call, not just initialized
+  // fetchCompletedRef ensures the fetch has completed (success or error)
+  const notEnrolledCount = (!hasFetchedRef.current || !fetchCompletedRef.current || !enrolledIdsLoaded || enrolledIdsLoading)
     ? null // Still loading or fetch hasn't completed yet - show loading indicator
     : Math.max(0, classStudents.length - enrolledStudents.length);
   

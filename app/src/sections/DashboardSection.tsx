@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
@@ -65,13 +65,14 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
   const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
   const [enrolledIdsLoaded, setEnrolledIdsLoaded] = useState(false); // Track if we've attempted to load
+  const fetchCompletedRef = useRef<boolean>(false); // Track if fetch has actually completed
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   
   // Only calculate enrolledStudents when enrolledIds are actually loaded
   // This prevents showing incorrect count during initial render
-  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading)
+  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current)
     ? classStudents.filter(s => enrolledIds.includes(s.id))
     : [];
   
@@ -80,11 +81,13 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     // Reset loading state when classId changes
     setEnrolledIdsLoaded(false);
     setEnrolledIds([]); // Clear previous data when classId changes
+    fetchCompletedRef.current = false; // Reset fetch completion flag
     
     if (!classId) {
       setEnrolledIds([]);
       setEnrolledIdsLoading(false);
       setEnrolledIdsLoaded(false);
+      fetchCompletedRef.current = false;
       return;
     }
     
@@ -96,6 +99,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       setEnrolledIds(cached.ids);
       setEnrolledIdsLoading(false);
       setEnrolledIdsLoaded(true); // Mark as loaded
+      fetchCompletedRef.current = true; // Mark fetch as completed
       // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
@@ -108,25 +112,28 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     } else {
       // No cache or expired - fetch immediately
       setEnrolledIdsLoading(true);
+      fetchCompletedRef.current = false;
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
           setEnrolledIds(ids);
           setEnrolledIdsLoading(false);
           setEnrolledIdsLoaded(true); // Mark as loaded
+          fetchCompletedRef.current = true; // Mark fetch as completed
         })
         .catch(() => {
           setEnrolledIds([]);
           setEnrolledIdsLoading(false);
           setEnrolledIdsLoaded(true); // Mark as loaded even on error (so we know we tried)
+          fetchCompletedRef.current = true; // Mark fetch as completed even on error
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Only calculate when enrolledIds are loaded (not just when loading is false)
-  // enrolledIdsLoaded ensures we've actually attempted to fetch, not just initialized
-  const notEnrolledCount = (!enrolledIdsLoaded || enrolledIdsLoading)
-    ? null // Still loading or haven't attempted load yet - will show loading indicator
+  // Only calculate when fetch has actually completed
+  // fetchCompletedRef ensures we've actually received data from the backend, not just initialized
+  const notEnrolledCount = (!enrolledIdsLoaded || enrolledIdsLoading || !fetchCompletedRef.current)
+    ? null // Still loading or fetch hasn't completed yet - show loading indicator
     : Math.max(0, classStudents.length - enrolledStudents.length);
   
   const todayAttendance = getTodayAttendance(classId);

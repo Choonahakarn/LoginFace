@@ -70,12 +70,6 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   
-  // Only calculate enrolledStudents when enrolledIds are actually loaded
-  // This prevents showing incorrect count during initial render
-  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current)
-    ? classStudents.filter(s => enrolledIds.includes(s.id))
-    : [];
-  
   // Load enrolled IDs in background - use cache if available
   useEffect(() => {
     // Reset loading state when classId changes
@@ -130,9 +124,19 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
+  // Only calculate enrolledStudents when fetch has actually completed
+  // This prevents showing incorrect count during initial render
+  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current)
+    ? classStudents.filter(s => enrolledIds.includes(s.id))
+    : [];
+  
   // Only calculate when fetch has actually completed
   // fetchCompletedRef ensures we've actually received data from the backend, not just initialized
-  const notEnrolledCount = (!enrolledIdsLoaded || enrolledIdsLoading || !fetchCompletedRef.current)
+  // IMPORTANT: Must check fetchCompletedRef.current FIRST to prevent showing classStudents.length
+  // If fetchCompletedRef.current is false, we haven't fetched yet, so show loading
+  // If enrolledIds is empty array but we have students, we need to wait for fetch to complete
+  // Only calculate when we're sure the fetch has completed (fetchCompletedRef.current === true)
+  const notEnrolledCount = (!fetchCompletedRef.current || !enrolledIdsLoaded || enrolledIdsLoading)
     ? null // Still loading or fetch hasn't completed yet - show loading indicator
     : Math.max(0, classStudents.length - enrolledStudents.length);
   

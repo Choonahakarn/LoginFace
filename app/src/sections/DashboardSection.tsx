@@ -68,16 +68,23 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
-  const enrolledStudents = classStudents.filter(s => enrolledIds.includes(s.id));
+  
+  // Only calculate enrolledStudents when enrolledIds are actually loaded
+  // This prevents showing incorrect count during initial render
+  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading)
+    ? classStudents.filter(s => enrolledIds.includes(s.id))
+    : [];
   
   // Load enrolled IDs in background - use cache if available
   useEffect(() => {
     // Reset loading state when classId changes
     setEnrolledIdsLoaded(false);
+    setEnrolledIds([]); // Clear previous data when classId changes
     
     if (!classId) {
       setEnrolledIds([]);
       setEnrolledIdsLoading(false);
+      setEnrolledIdsLoaded(false);
       return;
     }
     

@@ -1189,39 +1189,49 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       )}
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-6 xl:px-8 min-w-0">
-            <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={onBack}>
-                <ArrowLeft className="w-5 h-5" />
+        <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
+          <div className="flex justify-between items-center h-14 sm:h-16 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-white" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <GraduationCap className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">เช็คชื่อด้วยใบหน้า</h1>
-                <p className="text-xs text-gray-500">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">เช็คชื่อด้วยใบหน้า</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">
                   {selectedClass ? `ห้อง ${selectedClass.name}` : 'สแกนใบหน้าเพื่อบันทึกการเข้าเรียน'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowResetConfirm(true)} className="text-amber-600 border-amber-300 hover:bg-amber-50">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Reset วันใหม่
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowResetConfirm(true)} 
+                className="text-amber-600 border-amber-300 hover:bg-amber-50 text-xs sm:text-sm px-2 sm:px-3 hidden md:flex"
+              >
+                <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Reset วันใหม่</span>
               </Button>
-              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
-              <span className="flex items-center gap-1.5 text-sm text-gray-700">
-                <User className="w-4 h-4 text-gray-500" />
-                {authUser?.firstName && authUser?.lastName
-                  ? `${authUser.firstName} ${authUser.lastName}`
-                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              <span className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" aria-hidden />
+              <span className="flex items-center gap-1 text-xs sm:text-sm text-gray-700 max-w-[100px] sm:max-w-none">
+                <User className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
+                <span className="truncate hidden sm:inline">
+                  {authUser?.firstName && authUser?.lastName
+                    ? `${authUser.firstName} ${authUser.lastName}`
+                    : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+                </span>
+                <span className="truncate sm:hidden">
+                  {authUser?.firstName || authUser?.email?.split('@')[0] || 'ผู้ใช้'}
+                </span>
               </span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => signOut().catch(() => {})}
-                className="text-gray-600 hover:text-red-600"
+                className="text-gray-600 hover:text-red-600 h-8 w-8 sm:h-9 sm:w-auto sm:px-3"
                 title="ออกจากระบบ"
               >
                 <LogOut className="w-4 h-4" />
@@ -1437,9 +1447,16 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
 
                 {/* Controls */}
                 <div className="space-y-3">
-                  <p className={`text-center ${isMobileDevice ? 'text-xs' : 'text-sm'} text-gray-600`}>
-                    กำลังสแกนเช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </p>
+                  <div className="text-center">
+                    <p className={`${isMobileDevice ? 'text-xs' : 'text-sm'} text-gray-600`}>
+                      กำลังสแกนเช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                    {selectedClass && (
+                      <p className={`${isMobileDevice ? 'text-xs' : 'text-sm'} text-gray-700 font-medium mt-1`}>
+                        ห้อง {selectedClass.name}
+                      </p>
+                    )}
+                  </div>
                   <div className={`flex justify-center flex-wrap ${isMobileDevice ? 'gap-2' : 'gap-2 sm:gap-4'}`}>
                   {!isCameraActive ? (
                     <Button onClick={handleStartCamera} size="lg" className="w-full sm:w-auto">
@@ -1617,6 +1634,11 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                     <p className="text-sm font-medium text-amber-700 mb-1">
                       กำลังสแกนเช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
+                    {selectedClass && (
+                      <p className="text-sm font-medium text-amber-700 mb-1">
+                        ห้อง {selectedClass.name}
+                      </p>
+                    )}
                     <p className="text-sm text-gray-500 py-1">กดหยุดสแกนเพื่อดูจำนวนขาดเรียน</p>
                   </>
                 ) : (
@@ -1624,6 +1646,11 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                     <p className="text-sm text-gray-500 mb-1">
                       เช็คชื่อวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
+                    {selectedClass && (
+                      <p className="text-sm text-gray-600 font-medium mb-1">
+                        ห้อง {selectedClass.name}
+                      </p>
+                    )}
                     <p className="text-2xl font-bold text-amber-600 mb-3">
                       ขาด {absentStudents.length} คน
                     </p>

@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Student } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
 export function useStudents() {
+  const supabase = getSupabase();
   const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { AttendanceRecord, Student } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
 /** ได้วันที่ในรูปแบบ YYYY-MM-DD ตาม timezone ปัจจุบัน (ไม่ใช่ UTC) */
@@ -18,6 +18,7 @@ let cacheTimestamp = 0;
 const CACHE_TTL = 5000; // 5 seconds
 
 export function useAttendance() {
+  const supabase = getSupabase();
   const { user } = useAuth();
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);

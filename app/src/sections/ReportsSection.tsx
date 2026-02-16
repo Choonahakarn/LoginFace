@@ -369,32 +369,37 @@ export function ReportsSection({ onBack }: ReportsSectionProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-6 xl:px-8 min-w-0">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={onBack}>
-                <ArrowLeft className="w-5 h-5" />
+        <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
+          <div className="flex justify-between items-center h-14 sm:h-16 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-white" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <GraduationCap className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">จัดรายงาน</h1>
-                <p className="text-xs text-gray-500">สรุปยอดแต่ละวัน / แต่ละเดือน / รายบุคคล (ทีละห้อง)</p>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">จัดรายงาน</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">สรุปยอดแต่ละวัน / แต่ละเดือน / รายบุคคล (ทีละห้อง)</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-sm text-gray-700">
-                <User className="w-4 h-4 text-gray-500" />
-                {authUser?.firstName && authUser?.lastName
-                  ? `${authUser.firstName} ${authUser.lastName}`
-                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <span className="flex items-center gap-1 text-xs sm:text-sm text-gray-700 max-w-[100px] sm:max-w-none">
+                <User className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
+                <span className="truncate hidden sm:inline">
+                  {authUser?.firstName && authUser?.lastName
+                    ? `${authUser.firstName} ${authUser.lastName}`
+                    : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+                </span>
+                <span className="truncate sm:hidden">
+                  {authUser?.firstName || authUser?.email?.split('@')[0] || 'ผู้ใช้'}
+                </span>
               </span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => signOut().catch(() => {})}
-                className="text-gray-600 hover:text-red-600"
+                className="text-gray-600 hover:text-red-600 h-8 w-8 sm:h-9 sm:w-auto sm:px-3"
                 title="ออกจากระบบ"
               >
                 <LogOut className="w-4 h-4" />

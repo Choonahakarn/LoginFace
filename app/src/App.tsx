@@ -10,6 +10,8 @@ import { FaceEnrollmentSection } from '@/sections/FaceEnrollmentSection';
 import { AttendanceScanningSection } from '@/sections/AttendanceScanningSection';
 import { ReportsSection } from '@/sections/ReportsSection';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { ConfigErrorPage } from '@/components/auth/ConfigErrorPage';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 import type { AppPage } from '@/types';
 
@@ -56,6 +58,9 @@ function AppContent() {
 }
 
 function App() {
+  if (!isSupabaseConfigured) {
+    return <ConfigErrorPage />;
+  }
   return (
     <ProtectedRoute>
       <AppContent />

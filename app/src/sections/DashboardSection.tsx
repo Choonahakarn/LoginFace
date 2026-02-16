@@ -39,6 +39,7 @@ import {
   Trash2,
   User,
   LogOut,
+  ArrowLeft,
 } from 'lucide-react';
 
 import type { AppPage } from '@/types';
@@ -79,28 +80,37 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-6 xl:px-8 min-w-0">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-white" />
+        <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
+          <div className="flex justify-between items-center h-14 sm:h-16 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => onNavigate('classroom')}
+                className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0"
+                title="กลับไปเลือกห้องเรียน"
+              >
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              </Button>
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <GraduationCap className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">ระบบเช็คชื่อ</h1>
-                <p className="text-xs text-gray-500">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">ระบบเช็คชื่อ</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">
                   {selectedClass ? `ห้อง ${selectedClass.name}` : 'โรงเรียนตัวอย่าง'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-1 justify-end">
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => onNavigate('classroom')}
-                className="text-gray-600"
+                className="text-gray-600 text-xs sm:text-sm px-2 sm:px-3"
               >
-                <School className="w-4 h-4 mr-1" />
-                เปลี่ยนห้อง
+                <School className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                <span className="hidden sm:inline">เปลี่ยนห้อง</span>
               </Button>
               <Button
                 variant="outline"
@@ -110,17 +120,22 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
                   setLateGraceDraft(String(selectedClass?.lateGraceMinutes ?? 15));
                   setShowClassSettings(true);
                 }}
-                className="text-gray-600"
+                className="text-gray-600 text-xs sm:text-sm px-2 sm:px-3 hidden md:flex"
               >
-                <Settings className="w-4 h-4 mr-1" />
-                ตั้งค่าห้องเรียน
+                <Settings className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                <span className="hidden sm:inline">ตั้งค่าห้องเรียน</span>
               </Button>
-              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
-              <span className="flex items-center gap-1.5 text-sm text-gray-700">
-                <User className="w-4 h-4 text-gray-500" />
-                {authUser?.firstName && authUser?.lastName
-                  ? `${authUser.firstName} ${authUser.lastName}`
-                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              <span className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" aria-hidden />
+              <span className="flex items-center gap-1 text-xs sm:text-sm text-gray-700 max-w-[120px] sm:max-w-none">
+                <User className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
+                <span className="truncate hidden sm:inline">
+                  {authUser?.firstName && authUser?.lastName
+                    ? `${authUser.firstName} ${authUser.lastName}`
+                    : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+                </span>
+                <span className="truncate sm:hidden">
+                  {authUser?.firstName || authUser?.email?.split('@')[0] || 'ผู้ใช้'}
+                </span>
               </span>
               <Button
                 variant="ghost"
@@ -313,7 +328,9 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
         </div>
 
         {/* Quick Actions */}
-        <h2 className="text-xl font-bold text-gray-800 mb-4">เมนูหลัก</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">
+          เมนูหลัก{selectedClass ? ` - ห้อง ${selectedClass.name}` : ''}
+        </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
           <Card 
             className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-transparent hover:border-blue-500"

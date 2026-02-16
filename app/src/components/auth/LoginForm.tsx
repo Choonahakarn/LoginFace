@@ -3,12 +3,14 @@
  * รองรับ Email/Password และ Social Login (Line)
  */
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Mail, Lock, Loader2, Clock } from 'lucide-react';
+import { Mail, Lock, Loader2, Clock, ScanLine, Info } from 'lucide-react';
+import { Logo } from './Logo';
+import { FeaturesInfo } from './FeaturesInfo';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -20,6 +22,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [rateLimitCooldown, setRateLimitCooldown] = useState<number | null>(null);
+  const [showFeatures, setShowFeatures] = useState(false);
 
   // Countdown timer สำหรับ rate limit
   useEffect(() => {
@@ -61,7 +64,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
       // ลองใช้ email ที่ clean ก่อน (trim whitespace)
       const cleanEmail = email.trim().toLowerCase();
       
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await getSupabase().auth.signInWithPassword({
         email: cleanEmail,
         password,
       });
@@ -127,7 +130,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
 
   const handleSocialLogin = async (provider: 'line') => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await getSupabase().auth.signInWithOAuth({
         provider: provider as any,
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -142,15 +145,37 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 space-y-6">
+    <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 p-8 space-y-6">
+      {/* Header with Logo */}
+      <div className="text-center space-y-3">
+        <div className="flex justify-center">
+          <Logo className="h-24 w-auto" useImage={true} />
+        </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            ระบบเช็คชื่อด้วยใบหน้า
+          </h1>
+          <p className="text-gray-500 mt-1 text-sm">
+            Face Recognition Attendance System
+          </p>
+        </div>
+      </div>
+
+      {/* ปุ่มดูข้อมูลเพิ่มเติม */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold">เข้าสู่ระบบ</h1>
-        <p className="text-gray-600 mt-2">ระบบเช็คชื่อนักเรียนด้วยใบหน้า</p>
+        <button
+          type="button"
+          onClick={() => setShowFeatures(true)}
+          className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium"
+        >
+          <Info className="w-4 h-4" />
+          ดูข้อมูลเพิ่มเติมเกี่ยวกับระบบ
+        </button>
       </div>
 
       <form onSubmit={handleEmailLogin} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">อีเมล</Label>
+          <Label htmlFor="email" className="text-gray-700">อีเมล</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
@@ -160,13 +185,13 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="pl-10"
+              className="pl-10 h-11"
             />
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password">รหัสผ่าน</Label>
+          <Label htmlFor="password" className="text-gray-700">รหัสผ่าน</Label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
@@ -176,14 +201,14 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="pl-10"
+              className="pl-10 h-11"
             />
           </div>
         </div>
 
         <Button 
           type="submit" 
-          className="w-full" 
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 text-sm" 
           disabled={loading || rateLimitCooldown !== null}
         >
           {loading ? (
@@ -207,20 +232,30 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
           </p>
         )}
 
-        <div className="mt-4 p-4 rounded-lg bg-blue-50 border border-blue-100 text-center text-sm text-gray-700">
-          <p className="font-medium text-blue-800 mb-1">ทดสอบระบบ</p>
-          <p>Login: <code className="bg-blue-100 px-1 rounded">teacher@school.edu</code></p>
-          <p>Password: <code className="bg-blue-100 px-1 rounded">password</code></p>
-          <p className="text-xs text-gray-500 mt-2">สามารถใช้บัญชีนี้เพื่อทดสอบระบบได้</p>
+        <div className="mt-4 p-4 rounded-lg bg-gray-50 border border-gray-200 text-center text-sm">
+          <p className="font-medium text-gray-800 mb-2">บัญชีทดสอบระบบ</p>
+          <div className="space-y-1 text-gray-600">
+            <p>
+              <span className="font-medium">อีเมล:</span>{' '}
+              <code className="bg-white px-2 py-0.5 rounded text-gray-800 font-mono text-xs border border-gray-200">teacher@school.edu</code>
+            </p>
+            <p>
+              <span className="font-medium">รหัสผ่าน:</span>{' '}
+              <code className="bg-white px-2 py-0.5 rounded text-gray-800 font-mono text-xs border border-gray-200">password</code>
+            </p>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            ใช้บัญชีนี้เพื่อทดสอบระบบ
+          </p>
         </div>
       </form>
 
-      <div className="relative">
+      <div className="relative py-4">
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">หรือ</span>
+          <span className="bg-white px-2 text-muted-foreground">หรือ</span>
         </div>
       </div>
 
@@ -238,7 +273,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         </Button>
       </div>
 
-      <div className="text-center text-sm">
+      <div className="text-center text-sm pt-2">
         <span className="text-gray-600">ยังไม่มีบัญชี? </span>
         <button
           type="button"
@@ -248,6 +283,11 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
           สมัครสมาชิก
         </button>
       </div>
+
+      {/* Features Info Modal */}
+      {showFeatures && (
+        <FeaturesInfo onClose={() => setShowFeatures(false)} />
+      )}
     </div>
   );
 }

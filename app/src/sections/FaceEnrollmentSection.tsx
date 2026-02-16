@@ -83,17 +83,23 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId ?? null);
 
   useEffect(() => {
-    backendFace.getEnrolledStudentIdsAsync(classId).then(async ids => {
-      const counts: Record<string, number> = {};
-      await Promise.all(
-        ids.map(async id => {
-          const c = await backendFace.getFaceEnrollmentCount(classId, id);
-          counts[id] = c;
-        })
-      );
+    // โหลดจำนวนการลงทะเบียนใบหน้าสำหรับนักเรียนทั้งหมดในห้องเรียน
+    const classStudents = students.filter(s => s.classIds.includes(classId));
+    const counts: Record<string, number> = {};
+    Promise.all(
+      classStudents.map(async student => {
+        try {
+          const c = await backendFace.getFaceEnrollmentCount(classId, student.id);
+          counts[student.id] = c;
+        } catch (e) {
+          // ถ้าเกิด error (เช่น นักเรียนยังไม่เคยลงทะเบียน) ให้เป็น 0
+          counts[student.id] = 0;
+        }
+      })
+    ).then(() => {
       setBackendFaceCounts(prev => ({ ...prev, ...counts }));
     });
-  }, [classId, backendFace, backendFace.faceVersion]);
+  }, [classId, backendFace, backendFace.faceVersion, students]);
 
   useEffect(() => {
     if (!selectedStudentId) return;
@@ -113,10 +119,10 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
     if (initialStudentId) setSelectedStudentId(initialStudentId);
   }, [initialStudentId]);
 
-  /** แสดงเฉพาะที่ยังไม่มีใบหน้าลงทะเบียน — ลงแล้วไม่โชว์ในหน้านี้ */
+  /** แสดงเฉพาะที่ยังไม่ครบ 5 รูป — แสดงทุกคนที่ยังไม่ครบ 5 รูป */
   const studentsNeedingEnrollment = students
     .filter(s => s.classIds.includes(classId))
-    .filter(s => resolvedFaceCount(s.id) === 0);
+    .filter(s => resolvedFaceCount(s.id) < 5);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -124,7 +130,6 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [connectionTest, setConnectionTest] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user'); // 'user' = กล้องหน้า, 'environment' = กล้องหลัง
   /** เก็บรูปเมื่อ error "โมเดลไม่ตรง" เพื่อให้กดปุ่มล้างข้อมูลเก่าและลงทะเบียนใหม่ได้ */
   const [retryWithForceNewModelBase64, setRetryWithForceNewModelBase64] = useState<string | null>(null);
@@ -392,7 +397,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
     : null;
 
   const classStudents = students.filter(s => s.classIds.includes(classId));
-  const allEnrolled = classStudents.length > 0 && classStudents.every(s => resolvedFaceCount(s.id) > 0);
+  const allEnrolled = classStudents.length > 0 && classStudents.every(s => resolvedFaceCount(s.id) >= 5);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -407,55 +412,39 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
       )}
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-6 xl:px-8 min-w-0">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={onBack}>
-                <ArrowLeft className="w-5 h-5" />
+        <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
+          <div className="flex justify-between items-center h-14 sm:h-16 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-white" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <GraduationCap className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">จัดการใบหน้า</h1>
-                <p className="text-xs text-gray-500">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">จัดการใบหน้า</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">
                   {selectedClass ? `ห้อง ${selectedClass.name}` : 'ห้องที่เลือก'} — แสดงเฉพาะนักเรียนในห้องนี้ที่ยังไม่มีใบหน้า
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  setConnectionTest('กำลังทดสอบ...');
-                  const base64 = videoRef.current && videoRef.current.videoWidth > 0
-                    ? captureFrameAsBase64(videoRef.current) ?? undefined
-                    : undefined;
-                  const r = await backendFace.testConnectionToBackend(base64);
-                  if (r.ok) {
-                    setConnectionTest(`✓ เชื่อมต่อได้ — Backend ตอบปกติ${r.imageReceived ? ' รับรูปภาพได้ ✓' : ''}`);
-                  } else {
-                    setConnectionTest(`✗ ล้มเหลว: ${r.error || 'ไม่ทราบสาเหตุ'}`);
-                  }
-                  setTimeout(() => setConnectionTest(null), 5000);
-                }}
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                ทดสอบเชื่อมต่อ
-              </Button>
-              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
-              <span className="flex items-center gap-1.5 text-sm text-gray-700">
-                <User className="w-4 h-4 text-gray-500" />
-                {authUser?.firstName && authUser?.lastName
-                  ? `${authUser.firstName} ${authUser.lastName}`
-                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <span className="flex items-center gap-1 text-xs sm:text-sm text-gray-700 max-w-[100px] sm:max-w-none">
+                <User className="w-3 h-3 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
+                <span className="truncate hidden sm:inline">
+                  {authUser?.firstName && authUser?.lastName
+                    ? `${authUser.firstName} ${authUser.lastName}`
+                    : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+                </span>
+                <span className="truncate sm:hidden">
+                  {authUser?.firstName || authUser?.email?.split('@')[0] || 'ผู้ใช้'}
+                </span>
               </span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => signOut().catch(() => {})}
-                className="text-gray-600 hover:text-red-600"
+                className="text-gray-600 hover:text-red-600 h-8 w-8 sm:h-9 sm:w-auto sm:px-3"
                 title="ออกจากระบบ"
               >
                 <LogOut className="w-4 h-4" />
@@ -464,11 +453,6 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
           </div>
         </div>
       </header>
-      {connectionTest && (
-        <Alert className={`mx-4 mt-2 ${connectionTest.startsWith('✓') ? 'border-green-500 bg-green-50' : 'border-amber-500 bg-amber-50'}`}>
-          <AlertDescription>{connectionTest}</AlertDescription>
-        </Alert>
-      )}
 
       {/* Main Content */}
       <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-6 xl:px-8 py-6 lg:py-8 min-w-0">
@@ -544,13 +528,31 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                     </Button>
                   </div>
                 </div>
+                {(faceData?.length ?? 0) < 5 ? (
+                  <div className="mt-4 p-2 bg-red-50 rounded-lg border border-red-200">
+                    <p className="text-xs font-semibold text-red-800 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      ต้องลงทะเบียนให้ครบ 5 รูปก่อน ถึงจะสแกนเช็คชื่อได้
+                    </p>
+                    <p className="text-xs text-red-700 mt-1">
+                      ตอนนี้ลงทะเบียนแล้ว {faceData?.length ?? 0}/5 รูป — ต้องลงทะเบียนอีก {5 - (faceData?.length ?? 0)} รูป
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-2 bg-green-50 rounded-lg border border-green-200">
+                    <p className="text-xs font-semibold text-green-800 flex items-center gap-1.5">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      ครบ 5 ภาพแล้ว — สามารถเช็คชื่อได้แล้ว
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
             {/* Face List */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <CardTitle className="flex items-center gap-2">
                     <UserCheck className="w-5 h-5" />
                     Embedding ที่ลงทะเบียน (ไม่เก็บรูป/วิดีโอ)
@@ -559,15 +561,6 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   <p className="text-xs text-muted-foreground mt-1">
                     เก็บเฉพาะ embedding + model_version + วันที่ + confidence (ไม่เก็บรูป/วิดีโอ ตาม PDPA)
                   </p>
-                  {(faceData?.length ?? 0) < 5 ? (
-                    <p className="text-xs font-medium text-amber-600 mt-1">
-                      ต้องลงทะเบียนครบ 5 ภาพ ถึงจะเช็คชื่อได้
-                    </p>
-                  ) : (
-                    <p className="text-xs font-medium text-green-600 mt-1">
-                      ครบ 5 ภาพแล้ว — เช็คชื่อได้
-                    </p>
-                  )}
                 </div>
                 {(faceData?.length ?? 0) < 5 && (
                   <Button onClick={() => { setShowAddDialog(true); startCamera(); }}>

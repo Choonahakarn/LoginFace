@@ -3,14 +3,14 @@
  * หน้า callback สำหรับ OAuth redirects
  */
 import { useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 
 export function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await getSupabase().auth.getSession();
         
         if (error) {
           console.error('Auth callback error:', error);

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Class } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
 function loadSelectedClassId(): string | null {
@@ -13,6 +13,7 @@ function loadSelectedClassId(): string | null {
 }
 
 export function useClassRoom() {
+  const supabase = getSupabase();
   const { user } = useAuth();
   const [classrooms, setClassrooms] = useState<Class[]>([]);
   const [selectedClassId, setSelectedClassIdState] = useState<string | null>(loadSelectedClassId);

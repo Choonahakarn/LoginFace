@@ -3,7 +3,7 @@
  * จัดการการล็อกอิน, สมัครสมาชิก, และ session
  */
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
 export interface AuthUser {
@@ -16,6 +16,7 @@ export interface AuthUser {
 }
 
 export function useAuth() {
+  const supabase = getSupabase();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export function useAuth() {
     // ตรวจสอบ session ปัจจุบัน
     const checkSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await getSupabase().auth.getSession();
         
         if (!mounted) return;
         
@@ -58,7 +59,7 @@ export function useAuth() {
           const now = Date.now();
           if (now >= expiresAt) {
             console.log('Session expired - clearing');
-            await supabase.auth.signOut();
+            await getSupabase().auth.signOut();
             setSession(null);
             setUser(null);
             setAuthUser(null);
@@ -138,7 +139,7 @@ export function useAuth() {
     // ฟังการเปลี่ยนแปลง auth state
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = getSupabase().auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
       console.log('Auth state changed:', event, { hasSession: !!session, hasUser: !!session?.user });
@@ -244,7 +245,7 @@ export function useAuth() {
     }
 
     // แจ้ง Supabase ให้ invalidate session (รันในพื้นหลัง)
-    supabase.auth.signOut().catch(() => {});
+    getSupabase().auth.signOut().catch(() => {});
 
     // Redirect ไปหน้า login ทันที (หน้าที่โหลดใหม่จะไม่มี session)
     window.location.href = window.location.origin;

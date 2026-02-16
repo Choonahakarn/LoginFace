@@ -3,7 +3,7 @@
  * รองรับ Email/Password และ Social Login
  */
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,7 +74,7 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
       const cleanEmail = email.trim().toLowerCase();
       
       // เพิ่ม timeout เพื่อป้องกันการค้าง
-      const signUpPromise = supabase.auth.signUp({
+      const signUpPromise = getSupabase().auth.signUp({
         email: cleanEmail,
         password,
         options: {
@@ -186,7 +186,7 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
 
   const handleSocialLogin = async (provider: 'line') => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await getSupabase().auth.signInWithOAuth({
         provider: provider as any,
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,

@@ -81,18 +81,25 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       return;
     }
     
-    const cached = enrolledIdsCache.get(classId);
-    const now = Date.now();
-    if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      setEnrolledIdsFromApi(cached.ids);
-      setEnrolledIdsLoading(false);
-      backendFace.getEnrolledStudentIdsAsync(classId)
-        .then(ids => {
-          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-          setEnrolledIdsFromApi(ids);
-        })
-        .catch(() => {});
-    } else {
+    // Always fetch from API - don't use cache to prevent showing wrong count
+    // Cache might have stale data or [] which would show classStudents.length incorrectly
+    backendFace.getEnrolledStudentIdsAsync(classId)
+      .then(ids => {
+        enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
+        setEnrolledIdsFromApi(ids);
+        setEnrolledIdsLoading(false);
+      })
+      .catch(() => {
+        // On error, check cache as fallback only if we have students loaded
+        const cached = enrolledIdsCache.get(classId);
+        if (cached && classStudents.length > 0) {
+          setEnrolledIdsFromApi(cached.ids);
+        } else {
+          // Keep as null to show loading indicator instead of wrong count
+          setEnrolledIdsFromApi(null);
+        }
+        setEnrolledIdsLoading(false);
+      });
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
@@ -100,16 +107,21 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           setEnrolledIdsLoading(false);
         })
         .catch(() => {
-          setEnrolledIdsFromApi([]);
+          // On error, keep as null to show loading indicator instead of wrong count
+          // Don't set to [] because that would show classStudents.length which is incorrect
+          setEnrolledIdsFromApi(null);
           setEnrolledIdsLoading(false);
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Only when enrolledIdsFromApi is not null have we received API result; then safe to show count
+  // Only when enrolledIdsFromApi is not null AND it's an array (not null) have we received API result
+  // IMPORTANT: enrolledIdsFromApi === null means we haven't received API result yet, so show loading
+  // enrolledIdsFromApi === [] means API returned empty array (no students enrolled), which is valid data
+  // enrolledIdsFromApi === [...] means API returned list of enrolled student IDs
   const notEnrolledCount =
     enrolledIdsFromApi === null
-      ? null
+      ? null // Still loading - haven't received API result yet - show loading indicator
       : Math.max(0, classStudents.length - classStudents.filter(s => enrolledIdsFromApi.includes(s.id)).length);
   
   const todayAttendance = getTodayAttendance(classId);

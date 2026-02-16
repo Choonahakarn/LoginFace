@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
 import { useAttendance } from '@/hooks/useAttendance';
@@ -24,6 +25,8 @@ import {
   TrendingUp,
   GraduationCap,
   UserCircle,
+  User,
+  LogOut,
 } from 'lucide-react';
 import { BuddhistCalendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -66,6 +69,7 @@ function fromDisplayDate(display: string): string | null {
 }
 
 export function ReportsSection({ onBack }: ReportsSectionProps) {
+  const { authUser, signOut } = useAuth();
   const { selectedClassId, selectedClass } = useClassRoom();
   const { students, getStudentsByClass } = useStudents();
   const { attendance } = useAttendance();
@@ -378,6 +382,23 @@ export function ReportsSection({ onBack }: ReportsSectionProps) {
                 <h1 className="text-xl font-bold text-gray-800">จัดรายงาน</h1>
                 <p className="text-xs text-gray-500">สรุปยอดแต่ละวัน / แต่ละเดือน / รายบุคคล (ทีละห้อง)</p>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </div>

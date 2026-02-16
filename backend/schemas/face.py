@@ -2,8 +2,9 @@ from pydantic import BaseModel
 
 
 class EnrollRequest(BaseModel):
-    class_id: str
-    student_id: str
+    user_id: str  # Supabase user UUID
+    class_id: str  # Supabase classroom UUID
+    student_id: str  # Supabase student UUID
     image_base64: str
     allow_duplicate: bool | None = False
     force_new_model: bool | None = False  # ล้าง embedding เก่าและใช้โมเดลปัจจุบัน (แก้กรณี dim ไม่ตรง)
@@ -16,7 +17,8 @@ class EnrollResponse(BaseModel):
 
 
 class RecognizeRequest(BaseModel):
-    class_id: str
+    user_id: str  # Supabase user UUID
+    class_id: str  # Supabase classroom UUID
     image_base64: str
 
 

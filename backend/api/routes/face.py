@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("face")
 
-from config import SIMILARITY_THRESHOLD, MIN_MARGIN, DATA_DIR
+from config import SIMILARITY_THRESHOLD, MIN_MARGIN, DATA_DIR, MIN_ENROLLMENTS_FOR_ATTENDANCE
 from services.face_service import (
     get_embedding_from_base64,
     get_embedding_from_base64_debug,
@@ -37,7 +37,7 @@ from schemas.face import (
 router = APIRouter()
 
 
-def _check_duplicate(class_id: str, embedding: list[float], exclude_student_id: str) -> tuple[str, float] | None:
+def _check_duplicate(user_id: str, class_id: str, embedding: list[float], exclude_student_id: str) -> tuple[str, float] | None:
     """If embedding matches another student, return (student_id, similarity).
     ตรวจสอบที่ 95% (0.95) เพื่อแจ้งเตือนผู้ใช้"""
     dim = len(embedding)
@@ -49,7 +49,7 @@ def _check_duplicate(class_id: str, embedding: list[float], exclude_student_id: 
         threshold = 0.95  # สำหรับ 4096-dim models
     else:
         threshold = 0.95  # สำหรับ Facenet512 (512-dim) และอื่นๆ
-    candidates = get_all_for_class(class_id)
+    candidates = get_all_for_class(user_id, class_id)
     for student_id, embs in candidates:
         if student_id == exclude_student_id:
             continue
@@ -62,9 +62,9 @@ def _check_duplicate(class_id: str, embedding: list[float], exclude_student_id: 
     return None
 
 
-def _get_existing_dim_for_student(class_id: str, student_id: str) -> int | None:
+def _get_existing_dim_for_student(user_id: str, class_id: str, student_id: str) -> int | None:
     """Return embedding dimension already stored for a student (first found)."""
-    records = get_embeddings(class_id, student_id)
+    records = get_embeddings(user_id, class_id, student_id)
     for r in records:
         emb = r.get("embedding")
         if emb:
@@ -72,10 +72,10 @@ def _get_existing_dim_for_student(class_id: str, student_id: str) -> int | None:
     return None
 
 
-def _get_dims_for_class(class_id: str) -> set[int]:
+def _get_dims_for_class(user_id: str, class_id: str) -> set[int]:
     """Return all embedding dimensions stored for a class."""
     dims: set[int] = set()
-    candidates = get_all_for_class(class_id)
+    candidates = get_all_for_class(user_id, class_id)
     for _, embs in candidates:
         for emb in embs:
             if emb:
@@ -114,11 +114,11 @@ def debug_extract(req: DebugImageRequest):
 def enroll(req: EnrollRequest):
     try:
         print(
-            f"\n>>> [ENROLL] request received - class={req.class_id} "
+            f"\n>>> [ENROLL] request received - user={req.user_id} class={req.class_id} "
             f"student={req.student_id} image_len={len(req.image_base64 or '')}"
         )
-        logger.info("POST /enroll received — class=%s student=%s image_len=%d", req.class_id, req.student_id, len(req.image_base64 or ""))
-        existing_dim = _get_existing_dim_for_student(req.class_id, req.student_id)
+        logger.info("POST /enroll received — user=%s class=%s student=%s image_len=%d", req.user_id, req.class_id, req.student_id, len(req.image_base64 or ""))
+        existing_dim = _get_existing_dim_for_student(req.user_id, req.class_id, req.student_id)
         preferred_models = model_order_for_dim(existing_dim) if existing_dim else None
         result = get_embedding_from_base64(req.image_base64, preferred_models=preferred_models)
         if not result:
@@ -128,10 +128,10 @@ def enroll(req: EnrollRequest):
             return JSONResponse(status_code=400, content={"detail": "ไม่พบใบหน้าในภาพ", "debug": debug})
         emb, conf = result
         if existing_dim and len(emb) != existing_dim:
-            remove_all(req.class_id, req.student_id)
-            logger.info("dim ไม่ตรง (expected=%s got=%s): ล้าง embedding เก่าอัตโนมัติ class=%s student=%s", existing_dim, len(emb), req.class_id, req.student_id)
-            print(f">>> [ENROLL] โมเดลไม่ตรง (expected dim={existing_dim}, got dim={len(emb)}) — ล้างข้อมูลเก่าอัตโนมัติแล้ว class={req.class_id} student={req.student_id}")
-        dup = _check_duplicate(req.class_id, emb, req.student_id)
+            remove_all(req.user_id, req.class_id, req.student_id)
+            logger.info("dim ไม่ตรง (expected=%s got=%s): ล้าง embedding เก่าอัตโนมัติ user=%s class=%s student=%s", existing_dim, len(emb), req.user_id, req.class_id, req.student_id)
+            print(f">>> [ENROLL] โมเดลไม่ตรง (expected dim={existing_dim}, got dim={len(emb)}) — ล้างข้อมูลเก่าอัตโนมัติแล้ว user={req.user_id} class={req.class_id} student={req.student_id}")
+        dup = _check_duplicate(req.user_id, req.class_id, emb, req.student_id)
         if dup and not req.allow_duplicate:
             other_id, sim = dup
             return JSONResponse(
@@ -141,10 +141,10 @@ def enroll(req: EnrollRequest):
                     "duplicate": {"student_id": other_id, "similarity": sim},
                 },
             )
-        count = get_count(req.class_id, req.student_id)
+        count = get_count(req.user_id, req.class_id, req.student_id)
         if count >= 5:
             raise HTTPException(status_code=400, detail="มีข้อมูลใบหน้าครบ 5 รายการแล้ว")
-        add_embedding(req.class_id, req.student_id, emb, conf)
+        add_embedding(req.user_id, req.class_id, req.student_id, emb, conf)
         return EnrollResponse(success=True, count=count + 1, message="ลงทะเบียนสำเร็จ")
     except HTTPException:
         raise
@@ -168,7 +168,10 @@ def recognize(req: RecognizeRequest):
     threshold = 0.4 if query_dim == 128 else SIMILARITY_THRESHOLD
 
     # Get pre-normalized embeddings cache (much faster!)
-    normalized_by_dim = get_normalized_embeddings_for_class(req.class_id)
+    # Only match against students with at least MIN_ENROLLMENTS_FOR_ATTENDANCE images
+    normalized_by_dim = get_normalized_embeddings_for_class(
+        req.user_id, req.class_id, min_embeddings=MIN_ENROLLMENTS_FOR_ATTENDANCE
+    )
     if query_dim not in normalized_by_dim or not normalized_by_dim[query_dim]:
         return RecognizeResponse(student_id=None, student_name=None, similarity=0, matched=False)
 
@@ -246,29 +249,30 @@ def recognize(req: RecognizeRequest):
 
 
 @router.get("/count", response_model=CountResponse)
-def get_face_count(class_id: str, student_id: str):
-    return CountResponse(count=get_count(class_id, student_id))
+def get_face_count(user_id: str, class_id: str, student_id: str):
+    return CountResponse(count=get_count(user_id, class_id, student_id))
 
 
 @router.get("/enrolled", response_model=EnrolledStudentsResponse)
-def get_enrolled_students(class_id: str):
-    candidates = get_all_for_class(class_id)
-    ids = [s[0] for s in candidates]
+def get_enrolled_students(user_id: str, class_id: str):
+    """Return student IDs that have at least MIN_ENROLLMENTS_FOR_ATTENDANCE face images (can check attendance)."""
+    candidates = get_all_for_class(user_id, class_id)
+    ids = [s[0] for s in candidates if len(s[1]) >= MIN_ENROLLMENTS_FOR_ATTENDANCE]
     return EnrolledStudentsResponse(student_ids=ids)
 
 
 @router.delete("/enroll")
-def delete_enrollment(class_id: str, student_id: str, index: int | None = None):
+def delete_enrollment(user_id: str, class_id: str, student_id: str, index: int | None = None):
     if index is not None:
-        remove_by_index(class_id, student_id, index)
+        remove_by_index(user_id, class_id, student_id, index)
     else:
-        remove_all(class_id, student_id)
+        remove_all(user_id, class_id, student_id)
     return {"success": True}
 
 
 @router.get("/list")
-def list_enrollments(class_id: str, student_id: str):
-    records = get_embeddings(class_id, student_id)
+def list_enrollments(user_id: str, class_id: str, student_id: str):
+    records = get_embeddings(user_id, class_id, student_id)
     return {
         "count": len(records),
         "records": [{"enrolledAt": r.get("enrolledAt", ""), "confidence": r.get("confidence", 0)} for r in records],

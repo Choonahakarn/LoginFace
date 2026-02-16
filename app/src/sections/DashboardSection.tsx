@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
 import { useAttendance } from '@/hooks/useAttendance';
@@ -36,6 +37,8 @@ import {
   School,
   Settings,
   Trash2,
+  User,
+  LogOut,
 } from 'lucide-react';
 
 import type { AppPage } from '@/types';
@@ -45,6 +48,7 @@ interface DashboardSectionProps {
 }
 
 export function DashboardSection({ onNavigate }: DashboardSectionProps) {
+  const { authUser, signOut } = useAuth();
   const { selectedClassId, selectedClass, updateClassroomName, updateLateGraceMinutes, deleteClassroom } = useClassRoom();
   const { students, getStudentsByClass } = useStudents();
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
@@ -88,7 +92,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -110,6 +114,22 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               >
                 <Settings className="w-4 h-4 mr-1" />
                 ตั้งค่าห้องเรียน
+              </Button>
+              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
               </Button>
             </div>
           </div>

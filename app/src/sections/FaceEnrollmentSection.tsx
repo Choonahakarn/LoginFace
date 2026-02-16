@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
 import { useBackendFace } from '@/hooks/useBackendFace';
@@ -21,7 +22,9 @@ import {
   Plus,
   Trash2,
   X,
-  FlipHorizontal
+  FlipHorizontal,
+  User,
+  LogOut
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -40,10 +43,22 @@ interface FaceEnrollmentSectionProps {
 }
 
 export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollmentSectionProps) {
+  const { authUser, signOut } = useAuth();
   const { selectedClassId, selectedClass } = useClassRoom();
-  const classId = selectedClassId ?? 'class-1';
+  const classId = selectedClassId;
   const { students } = useStudents();
   const backendFace = useBackendFace();
+  
+  if (!classId) {
+    return (
+      <div className="p-4">
+        <Alert>
+          <AlertDescription>กรุณาเลือกห้องเรียนก่อน</AlertDescription>
+        </Alert>
+        <Button onClick={onBack} className="mt-4">กลับ</Button>
+      </div>
+    );
+  }
   const [backendFaceCounts, setBackendFaceCounts] = useState<Record<string, number>>({});
   const [backendFaceRecords, setBackendFaceRecords] = useState<Record<string, { enrolledAt: string; confidence: number }[]>>({});
   
@@ -408,26 +423,44 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                setConnectionTest('กำลังทดสอบ...');
-                const base64 = videoRef.current && videoRef.current.videoWidth > 0
-                  ? captureFrameAsBase64(videoRef.current) ?? undefined
-                  : undefined;
-                const r = await backendFace.testConnectionToBackend(base64);
-                if (r.ok) {
-                  setConnectionTest(`✓ เชื่อมต่อได้ — Backend ตอบปกติ${r.imageReceived ? ' รับรูปภาพได้ ✓' : ''}`);
-                } else {
-                  setConnectionTest(`✗ ล้มเหลว: ${r.error || 'ไม่ทราบสาเหตุ'}`);
-                }
-                setTimeout(() => setConnectionTest(null), 5000);
-              }}
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              ทดสอบเชื่อมต่อ
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setConnectionTest('กำลังทดสอบ...');
+                  const base64 = videoRef.current && videoRef.current.videoWidth > 0
+                    ? captureFrameAsBase64(videoRef.current) ?? undefined
+                    : undefined;
+                  const r = await backendFace.testConnectionToBackend(base64);
+                  if (r.ok) {
+                    setConnectionTest(`✓ เชื่อมต่อได้ — Backend ตอบปกติ${r.imageReceived ? ' รับรูปภาพได้ ✓' : ''}`);
+                  } else {
+                    setConnectionTest(`✗ ล้มเหลว: ${r.error || 'ไม่ทราบสาเหตุ'}`);
+                  }
+                  setTimeout(() => setConnectionTest(null), 5000);
+                }}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                ทดสอบเชื่อมต่อ
+              </Button>
+              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -526,6 +559,15 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   <p className="text-xs text-muted-foreground mt-1">
                     เก็บเฉพาะ embedding + model_version + วันที่ + confidence (ไม่เก็บรูป/วิดีโอ ตาม PDPA)
                   </p>
+                  {(faceData?.length ?? 0) < 5 ? (
+                    <p className="text-xs font-medium text-amber-600 mt-1">
+                      ต้องลงทะเบียนครบ 5 ภาพ ถึงจะเช็คชื่อได้
+                    </p>
+                  ) : (
+                    <p className="text-xs font-medium text-green-600 mt-1">
+                      ครบ 5 ภาพแล้ว — เช็คชื่อได้
+                    </p>
+                  )}
                 </div>
                 {(faceData?.length ?? 0) < 5 && (
                   <Button onClick={() => { setShowAddDialog(true); startCamera(); }}>

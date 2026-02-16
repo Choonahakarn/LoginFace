@@ -12,6 +12,9 @@ MIN_MARGIN = float(os.getenv("MIN_MARGIN", "0.12"))  # เพิ่มจาก 
 # Threshold สำหรับความมั่นใจสูงมาก (ใช้สำหรับ early exit)
 HIGH_CONFIDENCE_THRESHOLD = float(os.getenv("HIGH_CONFIDENCE_THRESHOLD", "0.78"))  # ความมั่นใจสูงมาก (เพิ่มจาก 0.75)
 
+# จำนวนภาพใบหน้าที่ต้องลงทะเบียนครบก่อนถึงจะเช็คชื่อได้
+MIN_ENROLLMENTS_FOR_ATTENDANCE = int(os.getenv("MIN_ENROLLMENTS_FOR_ATTENDANCE", "5"))
+
 # Data directory
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)

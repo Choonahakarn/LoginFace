@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
 import { useAttendance } from '@/hooks/useAttendance';
 import { loadMediaPipeFaceDetector, detectFaceFromVideo, isMediaPipeLoaded } from '@/lib/mediapipeApi';
-import { recognizeFace } from '@/api/face';
 import { captureFrameAsBase64, captureFaceCropAsBase64 } from '@/lib/captureFrame';
 import { useBackendFace } from '@/hooks/useBackendFace';
 import { detectLiveness, isFaceLandmarkerLoaded, loadFaceLandmarker, resetLivenessDetection } from '@/lib/livenessDetection';
@@ -41,7 +41,9 @@ import {
   Maximize2,
   Minimize2,
   UserX,
-  FlipHorizontal
+  FlipHorizontal,
+  User,
+  LogOut
 } from 'lucide-react';
 
 interface AttendanceScanningSectionProps {
@@ -49,11 +51,24 @@ interface AttendanceScanningSectionProps {
 }
 
 export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionProps) {
+  const { authUser, signOut } = useAuth();
   const { selectedClassId, selectedClass } = useClassRoom();
   const { getStudentsByClass } = useStudents();
   const { recordAttendance, getTodayAttendance, getStudentStatusToday, getStudentStatusTodaySync, clearTodayAttendance } = useAttendance();
-  const classId = selectedClassId ?? 'class-1';
+  const backendFace = useBackendFace();
+  const classId = selectedClassId;
   const lateGraceMinutes = selectedClass?.lateGraceMinutes ?? 15;
+  
+  if (!classId) {
+    return (
+      <div className="p-4">
+        <Alert>
+          <AlertDescription>กรุณาเลือกห้องเรียนก่อน</AlertDescription>
+        </Alert>
+        <Button onClick={onBack} className="mt-4">กลับ</Button>
+      </div>
+    );
+  }
   
   // ตรวจสอบว่าเป็น mobile device หรือ tablet (รวม iPad)
   const [isMobileDevice, setIsMobileDevice] = useState(false);
@@ -774,9 +789,9 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
       abortControllerRef.current = abortController;
       
       let match: { student: { id: string; firstName: string; lastName: string }; similarity: number } | null = null;
-      if (base64) {
+      if (base64 && classId) {
         try {
-          const res = await recognizeFace(classId, base64, abortController.signal);
+          const res = await backendFace.recognize(classId, base64, abortController.signal);
           // Check if request was cancelled
           if (abortController.signal.aborted) {
             return;
@@ -1190,10 +1205,28 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
                 </p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowResetConfirm(true)} className="text-amber-600 border-amber-300 hover:bg-amber-50">
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Reset วันใหม่
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowResetConfirm(true)} className="text-amber-600 border-amber-300 hover:bg-amber-50">
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Reset วันใหม่
+              </Button>
+              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -1512,7 +1545,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
 
                 <div className="mt-4 border-t pt-4">
                   <p className="text-sm text-gray-500 mb-2">
-                    ลงทะเบียนใบหน้า: {enrolledStudents.length}/{classStudents.length} คน
+                    ลงทะเบียนครบ 5 ภาพ (เช็คชื่อได้): {enrolledStudents.length}/{classStudents.length} คน
                   </p>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 

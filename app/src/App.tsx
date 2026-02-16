@@ -9,11 +9,11 @@ import { StudentManagementSection } from '@/sections/StudentManagementSection';
 import { FaceEnrollmentSection } from '@/sections/FaceEnrollmentSection';
 import { AttendanceScanningSection } from '@/sections/AttendanceScanningSection';
 import { ReportsSection } from '@/sections/ReportsSection';
-import { Toaster } from '@/components/ui/sonner';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 import type { AppPage } from '@/types';
 
-function App() {
+function AppContent() {
   const [currentPage, setCurrentPage] = useState<AppPage>('classroom');
   const [enrollTargetStudentId, setEnrollTargetStudentId] = useState<string | null>(null);
 
@@ -52,11 +52,14 @@ function App() {
     }
   };
 
+  return <React.Fragment key={currentPage}>{renderPage()}</React.Fragment>;
+}
+
+function App() {
   return (
-    <>
-      <React.Fragment key={currentPage}>{renderPage()}</React.Fragment>
-      <Toaster />
-    </>
+    <ProtectedRoute>
+      <AppContent />
+    </ProtectedRoute>
   );
 }
 

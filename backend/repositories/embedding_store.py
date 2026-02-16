@@ -1,151 +1,265 @@
-"""Persistent storage for face embeddings (class_id, student_id -> embeddings)."""
+"""Persistent storage for face embeddings using Supabase or JSON fallback."""
+from __future__ import annotations
 import json
 import os
-from pathlib import Path
 import time
+import uuid
+from pathlib import Path
 import numpy as np
+from typing import Optional, Any
 
+try:
+    from lib.supabase_client import supabase
+except Exception as e:
+    print(f"WARNING: Could not import Supabase client: {e}")
+    supabase = None
+
+# JSON fallback when Supabase not configured
 from config import EMBEDDINGS_DB
 
-# In-memory cache for embeddings to avoid loading from disk every time
-_cache: dict | None = None
-_cache_timestamp: float = 0
-_cache_ttl: float = 1.0  # Cache TTL in seconds (1 second = refresh on file changes)
+def _json_key(user_id: str, classroom_id: str, student_id: str) -> str:
+    return f"{user_id}:{classroom_id}:{student_id}"
 
-# Pre-computed normalized embeddings cache: {class_id: {dim: [(student_id, normalized_emb_matrix, student_indices), ...]}}
-_normalized_cache: dict[str, dict[int, list[tuple[str, np.ndarray, list[int]]]]] = {}
-_normalized_cache_timestamp: float = 0
-
-
-def _load() -> dict:
-    global _cache, _cache_timestamp
-    current_time = time.time()
-    
-    # Check if cache is still valid
-    if _cache is not None and (current_time - _cache_timestamp) < _cache_ttl:
-        return _cache
-    
-    # Load from disk
+def _json_load() -> dict:
     if not os.path.exists(EMBEDDINGS_DB):
-        _cache = {}
-        _cache_timestamp = current_time
-        return _cache
-    
+        return {}
     try:
         with open(EMBEDDINGS_DB, "r", encoding="utf-8") as f:
-            _cache = json.load(f)
-            _cache_timestamp = current_time
-            return _cache
+            return json.load(f)
     except Exception:
-        _cache = {}
-        _cache_timestamp = current_time
-        return _cache
+        return {}
 
-
-def _save(data: dict) -> None:
-    global _cache, _cache_timestamp, _normalized_cache
+def _json_save(data: dict) -> None:
     Path(EMBEDDINGS_DB).parent.mkdir(parents=True, exist_ok=True)
     with open(EMBEDDINGS_DB, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=0)
-    # Update cache immediately after save
-    _cache = data
-    _cache_timestamp = time.time()
-    # Invalidate normalized cache so it gets recomputed
-    _normalized_cache = {}
+
+if supabase is None:
+    print("=" * 60)
+    print("WARNING: Supabase client not initialized!")
+    print("Using JSON file fallback (embeddings.json)")
+    print("To enable Supabase:")
+    print("1. Create backend/.env file")
+    print("2. Add: SUPABASE_URL=https://your-project.supabase.co")
+    print("3. Add: SUPABASE_SERVICE_ROLE_KEY=your-service-role-key")
+    print("=" * 60)
+
+# Pre-computed normalized embeddings cache: {user_id: {classroom_id: {dim: [(student_id, normalized_emb_matrix, student_indices), ...]}}}}
+_normalized_cache: dict[str, dict[str, dict[int, list[tuple[str, Any, list[int]]]]]] = {}
+_normalized_cache_timestamp: float = 0
 
 
 def invalidate_cache() -> None:
-    """Force cache invalidation - call after external file modifications."""
-    global _cache, _cache_timestamp
-    _cache = None
-    _cache_timestamp = 0
+    """Force cache invalidation - call after external modifications."""
+    global _normalized_cache, _normalized_cache_timestamp
+    _normalized_cache = {}
+    _normalized_cache_timestamp = 0
 
 
-def _key(class_id: str, student_id: str) -> str:
-    return f"{class_id}:{student_id}"
+def add_embedding(
+    user_id: str,
+    classroom_id: str,
+    student_id: str,
+    embedding: list[float],
+    confidence: float,
+) -> int:
+    """Add embedding. Max 5 per (user, classroom, student). Returns new count."""
+    if supabase is not None:
+        try:
+            existing = get_embeddings(user_id, classroom_id, student_id)
+            if len(existing) >= 5:
+                oldest = existing[0]
+                supabase.table("face_embeddings").delete().eq("id", oldest["id"]).execute()
 
+            supabase.table("face_embeddings").insert({
+                "user_id": user_id,
+                "classroom_id": classroom_id,
+                "student_id": student_id,
+                "embedding": embedding,
+                "confidence": confidence,
+            }).execute()
+            invalidate_cache()
+            return len(existing) + 1
+        except Exception as e:
+            print(f"Error adding embedding: {e}")
+            raise
 
-def add_embedding(class_id: str, student_id: str, embedding: list[float], confidence: float) -> int:
-    """Add embedding. Max 5 per (class, student). Returns new count."""
-    data = _load()
-    k = _key(class_id, student_id)
-    records = data.get(k, [])
-    records.append({
+    # JSON fallback
+    key = _json_key(user_id, classroom_id, student_id)
+    data = _json_load()
+    if key not in data:
+        data[key] = []
+    arr = data[key]
+    if len(arr) >= 5:
+        arr.pop(0)
+    arr.append({
+        "id": str(uuid.uuid4()),
         "embedding": embedding,
         "confidence": confidence,
-        "enrolledAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "enrolledAt": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
     })
-    records = records[-5:]  # Keep last 5
-    data[k] = records
-    _save(data)  # _save automatically updates cache
-    return len(records)
+    _json_save(data)
+    invalidate_cache()
+    return len(arr)
 
 
-def get_embeddings(class_id: str, student_id: str) -> list[dict]:
-    """Get all embeddings for (class, student)."""
-    data = _load()
-    return data.get(_key(class_id, student_id), [])
+def get_embeddings(
+    user_id: str,
+    classroom_id: str,
+    student_id: str,
+) -> list[dict]:
+    """Get all embeddings for (user, classroom, student)."""
+    if supabase is not None:
+        try:
+            response = (
+                supabase.table("face_embeddings")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("classroom_id", classroom_id)
+                .eq("student_id", student_id)
+                .order("enrolled_at", desc=False)
+                .execute()
+            )
+            return [
+                {"id": row["id"], "embedding": row["embedding"], "confidence": row["confidence"], "enrolledAt": row["enrolled_at"]}
+                for row in response.data
+            ]
+        except Exception as e:
+            print(f"Error getting embeddings: {e}")
+            return []
+
+    key = _json_key(user_id, classroom_id, student_id)
+    data = _json_load()
+    arr = data.get(key, [])
+    return [{"id": r["id"], "embedding": r["embedding"], "confidence": r["confidence"], "enrolledAt": r["enrolledAt"]} for r in arr]
 
 
-def get_count(class_id: str, student_id: str) -> int:
-    return len(get_embeddings(class_id, student_id))
+def get_count(
+    user_id: str,
+    classroom_id: str,
+    student_id: str,
+) -> int:
+    """Get count of embeddings for (user, classroom, student)."""
+    return len(get_embeddings(user_id, classroom_id, student_id))
 
 
-def remove_all(class_id: str, student_id: str) -> None:
-    data = _load()
-    k = _key(class_id, student_id)
-    if k in data:
-        del data[k]
-        _save(data)  # _save automatically updates cache
+def remove_all(
+    user_id: str,
+    classroom_id: str,
+    student_id: str,
+) -> None:
+    """Remove all embeddings for (user, classroom, student)."""
+    if supabase is not None:
+        try:
+            supabase.table("face_embeddings").delete().eq("user_id", user_id).eq("classroom_id", classroom_id).eq("student_id", student_id).execute()
+            invalidate_cache()
+            return
+        except Exception as e:
+            print(f"Error removing embeddings: {e}")
+            raise
+
+    key = _json_key(user_id, classroom_id, student_id)
+    data = _json_load()
+    if key in data:
+        del data[key]
+        _json_save(data)
+    invalidate_cache()
 
 
-def remove_by_index(class_id: str, student_id: str, index: int) -> int:
-    data = _load()
-    k = _key(class_id, student_id)
-    records = data.get(k, [])
-    if 0 <= index < len(records):
-        records.pop(index)
-        if not records:
-            del data[k]
-        else:
-            data[k] = records
-        _save(data)  # _save automatically updates cache
-    return len(data.get(k, []))
+def remove_by_index(
+    user_id: str,
+    classroom_id: str,
+    student_id: str,
+    index: int,
+) -> int:
+    """Remove embedding by index. Returns remaining count."""
+    if supabase is not None:
+        try:
+            embeddings = get_embeddings(user_id, classroom_id, student_id)
+            if 0 <= index < len(embeddings):
+                supabase.table("face_embeddings").delete().eq("id", embeddings[index]["id"]).execute()
+                invalidate_cache()
+            return len(embeddings) - (1 if 0 <= index < len(embeddings) else 0)
+        except Exception as e:
+            print(f"Error removing embedding by index: {e}")
+            return len(get_embeddings(user_id, classroom_id, student_id))
+
+    key = _json_key(user_id, classroom_id, student_id)
+    data = _json_load()
+    arr = list(data.get(key, []))
+    if 0 <= index < len(arr):
+        arr.pop(index)
+        if arr:
+            data[key] = arr
+        elif key in data:
+            del data[key]
+        _json_save(data)
+        invalidate_cache()
+    return len(arr)
 
 
-def get_all_for_class(class_id: str) -> list[tuple[str, list[list[float]]]]:
-    """Returns [(student_id, [emb1, emb2, ...]), ...] for class."""
-    data = _load()
-    result = []
-    prefix = f"{class_id}:"
-    for k, records in data.items():
+def get_all_for_class(
+    user_id: str,
+    classroom_id: str,
+) -> list[tuple[str, list[list[float]]]]:
+    """Returns [(student_id, [emb1, emb2, ...]), ...] for classroom."""
+    if supabase is not None:
+        try:
+            response = (
+                supabase.table("face_embeddings")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("classroom_id", classroom_id)
+                .order("enrolled_at", desc=False)
+                .execute()
+            )
+            by_student: dict[str, list[list[float]]] = {}
+            for row in response.data:
+                sid = row["student_id"]
+                if sid not in by_student:
+                    by_student[sid] = []
+                by_student[sid].append(row["embedding"])
+            return [(sid, embs) for sid, embs in by_student.items() if embs]
+        except Exception as e:
+            print(f"Error getting embeddings for class: {e}")
+            return []
+
+    prefix = f"{user_id}:{classroom_id}:"
+    data = _json_load()
+    by_student: dict[str, list[list[float]]] = {}
+    for k, arr in data.items():
         if k.startswith(prefix):
             student_id = k[len(prefix):]
-            embs = [r["embedding"] for r in records]
+            embs = [r["embedding"] for r in arr]
             if embs:
-                result.append((student_id, embs))
-    return result
+                by_student[student_id] = embs
+    return [(sid, embs) for sid, embs in by_student.items() if embs]
 
 
-def get_normalized_embeddings_for_class(class_id: str) -> dict[int, list[tuple[str, np.ndarray, list[int]]]]:
+def get_normalized_embeddings_for_class(
+    user_id: str,
+    classroom_id: str,
+    min_embeddings: int | None = None,
+) -> dict[int, list[tuple[str, Any, list[int]]]]:
     """Returns normalized embeddings grouped by dimension for fast vectorized similarity.
     Returns: {dim: [(student_id, normalized_emb_matrix, original_indices), ...]}
     where normalized_emb_matrix is (n_embeddings, dim) array, original_indices maps to original embedding list.
+    When min_embeddings is set, only include students with at least that many embeddings (e.g. 5 for attendance).
     """
     global _normalized_cache, _normalized_cache_timestamp
-    
+
     current_time = time.time()
-    # Invalidate cache if data changed (check if cache timestamp is older than data cache)
-    if _normalized_cache_timestamp < _cache_timestamp:
-        _normalized_cache = {}
-        _normalized_cache_timestamp = current_time
-    
-    if class_id not in _normalized_cache:
-        _normalized_cache[class_id] = {}
-    
-    class_cache = _normalized_cache[class_id]
-    candidates = get_all_for_class(class_id)
-    
+
+    # Check cache
+    cache_key = f"{user_id}:{classroom_id}"
+    if cache_key not in _normalized_cache:
+        _normalized_cache[cache_key] = {}
+
+    class_cache = _normalized_cache[cache_key]
+    candidates = get_all_for_class(user_id, classroom_id)
+    if min_embeddings is not None:
+        candidates = [(sid, embs) for sid, embs in candidates if len(embs) >= min_embeddings]
+
     # Group by dimension
     by_dim: dict[int, list[tuple[str, list[list[float]]]]] = {}
     for student_id, embs in candidates:
@@ -155,11 +269,11 @@ def get_normalized_embeddings_for_class(class_id: str) -> dict[int, list[tuple[s
         if dim not in by_dim:
             by_dim[dim] = []
         by_dim[dim].append((student_id, embs))
-    
+
     # Pre-compute normalized matrices for each dimension
-    result: dict[int, list[tuple[str, np.ndarray, list[int]]]] = {}
+    result: dict[int, list[tuple[str, Any, list[int]]]] = {}
     for dim, students_embs in by_dim.items():
-        if dim not in class_cache or _normalized_cache_timestamp < _cache_timestamp:
+        if dim not in class_cache:
             normalized_list = []
             for student_id, embs in students_embs:
                 # Convert to numpy and normalize
@@ -171,6 +285,6 @@ def get_normalized_embeddings_for_class(class_id: str) -> dict[int, list[tuple[s
                 normalized_list.append((student_id, normalized, list(range(len(embs)))))
             class_cache[dim] = normalized_list
         result[dim] = class_cache[dim]
-    
+
     _normalized_cache_timestamp = current_time
     return result

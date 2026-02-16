@@ -1,23 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Class } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
-
-function loadClassrooms(): Class[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEYS.CLASSROOMS);
-    if (saved) {
-      const list = JSON.parse(saved);
-      return Array.isArray(list) ? list : [];
-    }
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-function saveClassrooms(list: Class[]) {
-  localStorage.setItem(STORAGE_KEYS.CLASSROOMS, JSON.stringify(list));
-}
+import { supabase } from '@/lib/supabase';
+import { useAuth } from './useAuth';
 
 function loadSelectedClassId(): string | null {
   try {
@@ -28,8 +13,75 @@ function loadSelectedClassId(): string | null {
 }
 
 export function useClassRoom() {
-  const [classrooms, setClassrooms] = useState<Class[]>(loadClassrooms);
+  const { user } = useAuth();
+  const [classrooms, setClassrooms] = useState<Class[]>([]);
   const [selectedClassId, setSelectedClassIdState] = useState<string | null>(loadSelectedClassId);
+  const [loading, setLoading] = useState(true);
+
+  // Load classrooms from Supabase
+  useEffect(() => {
+    if (!user) {
+      setClassrooms([]);
+      setLoading(false);
+      return;
+    }
+
+    const loadClassrooms = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('classrooms')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error loading classrooms:', error);
+          setClassrooms([]);
+          setLoading(false);
+          return;
+        }
+
+        // Transform to Class format
+        const transformedClassrooms: Class[] = (data || []).map(c => ({
+          id: c.id,
+          name: c.name,
+          code: c.code || undefined,
+          studentCount: c.student_count || 0,
+          lateGraceMinutes: c.late_grace_minutes || 15,
+        }));
+
+        setClassrooms(transformedClassrooms);
+      } catch (error) {
+        console.error('Error loading classrooms:', error);
+        setClassrooms([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadClassrooms();
+
+    // Subscribe to changes
+    const subscription = supabase
+      .channel('classrooms_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'classrooms',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          loadClassrooms();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [user]);
 
   useEffect(() => {
     const id = loadSelectedClassId();
@@ -45,89 +97,191 @@ export function useClassRoom() {
     }
   }, []);
 
-  const addClassroom = useCallback((name: string): Class => {
-    const id = `class-${Date.now()}`;
-    const newClass: Class = {
-      id,
-      name: name.trim(),
-      studentCount: 0,
-      lateGraceMinutes: 15,
-    };
-    setClassrooms((prev) => {
-      const next = [...prev, newClass];
-      saveClassrooms(next);
-      return next;
-    });
-    return newClass;
-  }, []);
-
-  const updateClassroomName = useCallback((classId: string, name: string) => {
-    const nextName = name.trim();
-    if (!nextName) return;
-    setClassrooms((prev) => {
-      const next = prev.map((c) => (c.id === classId ? { ...c, name: nextName } : c));
-      saveClassrooms(next);
-      return next;
-    });
-  }, []);
-
-  const updateLateGraceMinutes = useCallback((classId: string, minutes: number) => {
-    const safe = Number.isFinite(minutes) ? Math.max(0, Math.min(180, Math.round(minutes))) : 15;
-    setClassrooms((prev) => {
-      const next = prev.map((c) => (c.id === classId ? { ...c, lateGraceMinutes: safe } : c));
-      saveClassrooms(next);
-      return next;
-    });
-  }, []);
-
-  const deleteClassroom = useCallback((classId: string) => {
-    // 1) remove from classrooms list
-    setClassrooms((prev) => {
-      const next = prev.filter((c) => c.id !== classId);
-      saveClassrooms(next);
-      return next;
-    });
-
-    // 2) clear selected class if deleting current selection
-    setSelectedClassIdState((prev) => {
-      if (prev === classId) {
-        localStorage.removeItem(STORAGE_KEYS.SELECTED_CLASS);
-        return null;
+  const addClassroom = useCallback(
+    async (name: string): Promise<Class> => {
+      // ตรวจสอบ user อีกครั้งก่อน insert
+      if (!user) {
+        console.error('addClassroom: user is null', { user });
+        throw new Error('User not authenticated');
       }
-      return prev;
-    });
 
-    // 3) cleanup attendance records for this class
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          const next = list.filter((a: any) => a?.classId !== classId);
-          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(next));
+      try {
+        const { data, error } = await supabase
+          .from('classrooms')
+          .insert({
+            user_id: user.id,
+            name: name.trim(),
+            student_count: 0,
+            late_grace_minutes: 15,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const newClass: Class = {
+          id: data.id,
+          name: data.name,
+          code: data.code || undefined,
+          studentCount: data.student_count || 0,
+          lateGraceMinutes: data.late_grace_minutes || 15,
+        };
+
+        // Reload classrooms
+        const { data: classroomsData, error: classroomsError } = await supabase
+          .from('classrooms')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!classroomsError && classroomsData) {
+          const transformedClassrooms: Class[] = classroomsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            code: c.code || undefined,
+            studentCount: c.student_count || 0,
+            lateGraceMinutes: c.late_grace_minutes || 15,
+          }));
+          setClassrooms(transformedClassrooms);
         }
-      }
-    } catch {
-      // ignore
-    }
 
-    // 4) remove this classId from students roster (keep students if they belong to other classes)
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          const next = list.map((s: any) => {
-            const classIds: string[] = Array.isArray(s?.classIds) ? s.classIds : [];
-            return { ...s, classIds: classIds.filter((id) => id !== classId) };
-          });
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(next));
-        }
+        return newClass;
+      } catch (error) {
+        console.error('Error adding classroom:', error);
+        throw error;
       }
-    } catch {
-      // ignore
-    }
-  }, []);
+    },
+    [user]
+  );
+
+  const updateClassroomName = useCallback(
+    async (classId: string, name: string) => {
+      if (!user) throw new Error('User not authenticated');
+
+      const nextName = name.trim();
+      if (!nextName) return;
+
+      try {
+        const { error } = await supabase
+          .from('classrooms')
+          .update({ name: nextName })
+          .eq('id', classId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        // Reload classrooms
+        const { data: classroomsData, error: classroomsError } = await supabase
+          .from('classrooms')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!classroomsError && classroomsData) {
+          const transformedClassrooms: Class[] = classroomsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            code: c.code || undefined,
+            studentCount: c.student_count || 0,
+            lateGraceMinutes: c.late_grace_minutes || 15,
+          }));
+          setClassrooms(transformedClassrooms);
+        }
+      } catch (error) {
+        console.error('Error updating classroom name:', error);
+        throw error;
+      }
+    },
+    [user]
+  );
+
+  const updateLateGraceMinutes = useCallback(
+    async (classId: string, minutes: number) => {
+      if (!user) throw new Error('User not authenticated');
+
+      const safe = Number.isFinite(minutes) ? Math.max(0, Math.min(180, Math.round(minutes))) : 15;
+
+      try {
+        const { error } = await supabase
+          .from('classrooms')
+          .update({ late_grace_minutes: safe })
+          .eq('id', classId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        // Reload classrooms
+        const { data: classroomsData, error: classroomsError } = await supabase
+          .from('classrooms')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!classroomsError && classroomsData) {
+          const transformedClassrooms: Class[] = classroomsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            code: c.code || undefined,
+            studentCount: c.student_count || 0,
+            lateGraceMinutes: c.late_grace_minutes || 15,
+          }));
+          setClassrooms(transformedClassrooms);
+        }
+      } catch (error) {
+        console.error('Error updating late grace minutes:', error);
+        throw error;
+      }
+    },
+    [user]
+  );
+
+  const deleteClassroom = useCallback(
+    async (classId: string) => {
+      if (!user) throw new Error('User not authenticated');
+
+      try {
+        // Delete classroom (cascade will delete student_classrooms and attendance)
+        const { error } = await supabase
+          .from('classrooms')
+          .delete()
+          .eq('id', classId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        // Clear selected class if deleting current selection
+        setSelectedClassIdState((prev) => {
+          if (prev === classId) {
+            localStorage.removeItem(STORAGE_KEYS.SELECTED_CLASS);
+            return null;
+          }
+          return prev;
+        });
+
+        // Reload classrooms
+        const { data: classroomsData, error: classroomsError } = await supabase
+          .from('classrooms')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!classroomsError && classroomsData) {
+          const transformedClassrooms: Class[] = classroomsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            code: c.code || undefined,
+            studentCount: c.student_count || 0,
+            lateGraceMinutes: c.late_grace_minutes || 15,
+          }));
+          setClassrooms(transformedClassrooms);
+        }
+      } catch (error) {
+        console.error('Error deleting classroom:', error);
+        throw error;
+      }
+    },
+    [user]
+  );
 
   const getClassrooms = useCallback(() => classrooms, [classrooms]);
   const getSelectedClass = useCallback((): Class | null => {
@@ -137,6 +291,7 @@ export function useClassRoom() {
 
   return {
     classrooms,
+    loading,
     selectedClassId,
     selectedClass: getSelectedClass(),
     setSelectedClassId,

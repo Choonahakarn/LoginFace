@@ -65,18 +65,20 @@ export type EnrollResult =
   | { success: false; reason: 'duplicate'; duplicate: { student_id: string; similarity: number } };
 
 export async function enrollFace(
+  userId: string,
   classId: string,
   studentId: string,
   imageBase64: string,
   options?: { allowDuplicate?: boolean; forceNewModel?: boolean }
 ): Promise<EnrollResult> {
-  console.log('[enrollFace] ส่ง request ไป', `${API_BASE}/api/face/enroll`, 'image_len=', imageBase64?.length);
+  console.log('[enrollFace] ส่ง request ไป', `${API_BASE}/api/face/enroll`, 'user=', userId, 'class=', classId, 'student=', studentId, 'image_len=', imageBase64?.length);
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/api/face/enroll`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        user_id: userId,
         class_id: classId,
         student_id: studentId,
         image_base64: imageBase64,
@@ -116,6 +118,7 @@ export interface RecognizeResult {
 }
 
 export async function recognizeFace(
+  userId: string,
   classId: string,
   imageBase64: string,
   signal?: AbortSignal
@@ -124,6 +127,7 @@ export async function recognizeFace(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      user_id: userId,
       class_id: classId,
       image_base64: imageBase64,
     }),
@@ -143,12 +147,13 @@ export async function recognizeFace(
 }
 
 export async function getFaceCount(
+  userId: string,
   classId: string,
   studentId: string
 ): Promise<number> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/face/count?class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`
+      `${API_BASE}/api/face/count?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`
     );
     const data = await res.json().catch(() => ({}));
     return data.count ?? 0;
@@ -157,10 +162,10 @@ export async function getFaceCount(
   }
 }
 
-export async function getEnrolledStudentIds(classId: string): Promise<string[]> {
+export async function getEnrolledStudentIds(userId: string, classId: string): Promise<string[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/face/enrolled?class_id=${encodeURIComponent(classId)}`
+      `${API_BASE}/api/face/enrolled?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}`
     );
     const data = await res.json().catch(() => ({}));
     return data.student_ids ?? [];
@@ -170,11 +175,12 @@ export async function getEnrolledStudentIds(classId: string): Promise<string[]> 
 }
 
 export async function removeFaceEnrollment(
+  userId: string,
   classId: string,
   studentId: string,
   index?: number
 ): Promise<void> {
-  let url = `${API_BASE}/api/face/enroll?class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`;
+  let url = `${API_BASE}/api/face/enroll?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`;
   if (index != null) url += `&index=${index}`;
   const res = await fetch(url, { method: 'DELETE' });
   if (!res.ok) {
@@ -191,12 +197,13 @@ export async function removeFaceEnrollment(
 }
 
 export async function getFaceEnrollmentRecords(
+  userId: string,
   classId: string,
   studentId: string
 ): Promise<{ enrolledAt: string; confidence: number }[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/face/list?class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`
+      `${API_BASE}/api/face/list?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}&student_id=${encodeURIComponent(studentId)}`
     );
     const data = await res.json().catch(() => ({}));
     return data.records ?? [];

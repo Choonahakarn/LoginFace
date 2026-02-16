@@ -36,7 +36,9 @@ out/
 Thumbs.db
 desktop.ini
 
-# Backend data
+# Backend
+backend/.env
+backend/data/embeddings.json
 backend/data/debug_*.jpg
 backend/__pycache__/
 backend/**/__pycache__/

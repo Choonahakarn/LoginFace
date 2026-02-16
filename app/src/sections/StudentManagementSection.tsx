@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
 import { useBackendFace } from '@/hooks/useBackendFace';
@@ -24,8 +25,11 @@ import {
   Edit, 
   Trash2,
   ArrowLeft,
-  GraduationCap
+  GraduationCap,
+  User,
+  LogOut
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface StudentManagementSectionProps {
   onBack: () => void;
@@ -33,6 +37,7 @@ interface StudentManagementSectionProps {
 }
 
 export function StudentManagementSection({ onBack, onNavigateToEnroll }: StudentManagementSectionProps) {
+  const { authUser, signOut } = useAuth();
   const { selectedClassId, selectedClass } = useClassRoom();
   const classId = selectedClassId ?? 'class-1';
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
@@ -75,17 +80,24 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
       student.studentId.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-  const handleAddStudent = () => {
+  const handleAddStudent = async () => {
     if (newStudent.studentId && newStudent.firstName && newStudent.lastName) {
-      addStudent({
-        studentId: newStudent.studentId,
-        firstName: newStudent.firstName,
-        lastName: newStudent.lastName,
-        status: 'active',
-        classIds: [classId]
-      });
-      setNewStudent({ studentId: '', firstName: '', lastName: '' });
-      setIsAddDialogOpen(false);
+      try {
+        await addStudent({
+          studentId: newStudent.studentId,
+          firstName: newStudent.firstName,
+          lastName: newStudent.lastName,
+          status: 'active',
+          classIds: [classId]
+        });
+        setNewStudent({ studentId: '', firstName: '', lastName: '' });
+        setIsAddDialogOpen(false);
+      } catch (error) {
+        console.error('Error adding student:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        const displayMsg = msg.includes('รหัสนักเรียน') ? msg : 'เพิ่มนักเรียนไม่สำเร็จ: ' + msg;
+        toast.error(displayMsg, { duration: 5000 });
+      }
     }
   };
 
@@ -129,15 +141,20 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
     });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingStudent) return;
     if (!editingStudent.studentId.trim() || !editingStudent.firstName.trim() || !editingStudent.lastName.trim()) return;
-    updateStudent(editingStudent.id, {
-      studentId: editingStudent.studentId.trim(),
-      firstName: editingStudent.firstName.trim(),
-      lastName: editingStudent.lastName.trim()
-    });
-    setEditingStudent(null);
+    try {
+      await updateStudent(editingStudent.id, {
+        studentId: editingStudent.studentId.trim(),
+        firstName: editingStudent.firstName.trim(),
+        lastName: editingStudent.lastName.trim()
+      });
+      setEditingStudent(null);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      toast.error(msg.includes('รหัสนักเรียน') ? msg : 'แก้ไขนักเรียนไม่สำเร็จ: ' + msg, { duration: 5000 });
+    }
   };
 
   return (
@@ -159,6 +176,23 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
                   {selectedClass ? `เฉพาะห้อง ${selectedClass.name}` : 'เฉพาะห้องที่เลือก'} — รายชื่อและใบหน้าแยกตามห้อง (บันทึกในเครื่อง)
                 </p>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </div>

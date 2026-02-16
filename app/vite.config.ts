@@ -12,4 +12,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    // Enable Hot Module Replacement (HMR) - reload automatically on code changes
+    hmr: {
+      overlay: true, // Show error overlay in browser
+    },
+    watch: {
+      // Watch for file changes and reload automatically
+      usePolling: false, // Use native file system events (faster)
+    },
+  },
 });

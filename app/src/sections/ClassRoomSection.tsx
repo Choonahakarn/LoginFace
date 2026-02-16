@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BookOpen, GraduationCap, Plus, School, ChevronRight, Search } from 'lucide-react';
+import { BookOpen, GraduationCap, Plus, School, ChevronRight, Search, User, LogOut } from 'lucide-react';
 import { APP_VERSION } from '@/lib/constants';
 
 const FACEBOOK_CONTACT_URL = 'https://www.facebook.com/MasterPe.ELLIE';
@@ -31,8 +32,9 @@ interface ClassRoomSectionProps {
 }
 
 export function ClassRoomSection({ onEnter }: ClassRoomSectionProps) {
-  const { classrooms, selectedClassId, setSelectedClassId, addClassroom } = useClassRoom();
-  const { students, updateStudent } = useStudents();
+  const { classrooms, selectedClassId, setSelectedClassId, addClassroom, loading: classroomsLoading } = useClassRoom();
+  const { students, updateStudent, loading: studentsLoading } = useStudents();
+  const { user, authUser, isAuthenticated, loading: authLoading, signOut } = useAuth();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -44,22 +46,46 @@ export function ClassRoomSection({ onEnter }: ClassRoomSectionProps) {
       )
     : classrooms;
 
-  const handleCreateClass = () => {
+  const handleCreateClass = async () => {
     const name = newClassName.trim();
     if (!name) return;
-    const isFirstClass = classrooms.length === 0;
-    const newClass = addClassroom(name);
-    // เมื่อสร้างห้องแรก ให้เพิ่มนักเรียนที่มีอยู่ (รวม mock) เข้าห้องนี้
-    if (isFirstClass) {
-      students.forEach((s) => {
-        if (!s.classIds.includes(newClass.id)) {
-          updateStudent(s.id, { classIds: [...s.classIds, newClass.id] });
-        }
-      });
+    
+    // รอให้ auth loading เสร็จก่อน
+    if (authLoading) {
+      alert('กำลังตรวจสอบการ Login กรุณารอสักครู่...');
+      return;
     }
-    setSelectedClassId(newClass.id);
-    setNewClassName('');
-    setShowAddDialog(false);
+    
+    // ตรวจสอบ authentication
+    if (!isAuthenticated) {
+      alert('กรุณา Login ก่อนสร้างห้องเรียน');
+      console.error('User not authenticated:', { isAuthenticated, user, authLoading });
+      return;
+    }
+    
+    if (classroomsLoading) {
+      alert('กำลังโหลดข้อมูลห้องเรียน กรุณารอสักครู่...');
+      return;
+    }
+    
+    try {
+      const isFirstClass = classrooms.length === 0;
+      const newClass = await addClassroom(name);
+      // เมื่อสร้างห้องแรก ให้เพิ่มนักเรียนที่มีอยู่ (รวม mock) เข้าห้องนี้
+      if (isFirstClass) {
+        for (const s of students) {
+          if (!s.classIds.includes(newClass.id)) {
+            await updateStudent(s.id, { classIds: [...s.classIds, newClass.id] });
+          }
+        }
+      }
+      setSelectedClassId(newClass.id);
+      setNewClassName('');
+      setShowAddDialog(false);
+    } catch (error) {
+      console.error('Error creating classroom:', error);
+      alert('สร้างห้องเรียนไม่สำเร็จ: ' + (error instanceof Error ? error.message : String(error)));
+    }
   };
 
   const handleUseClass = (classId: string) => {
@@ -82,7 +108,7 @@ export function ClassRoomSection({ onEnter }: ClassRoomSectionProps) {
                 <p className="text-xs text-gray-500">เลือกหรือสร้างห้องเพื่อเช็คชื่อ</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 justify-end">
               <Button
                 variant="ghost"
                 className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
@@ -100,6 +126,22 @@ export function ClassRoomSection({ onEnter }: ClassRoomSectionProps) {
               >
                 <FacebookIcon className="w-5 h-5" />
               </a>
+              <span className="w-px h-6 bg-gray-200 mx-1" aria-hidden />
+              <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                <User className="w-4 h-4 text-gray-500" />
+                {authUser?.firstName && authUser?.lastName
+                  ? `${authUser.firstName} ${authUser.lastName}`
+                  : authUser?.firstName || authUser?.email || 'ผู้ใช้'}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => signOut().catch(() => {})}
+                className="text-gray-600 hover:text-red-600"
+                title="ออกจากระบบ"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </div>

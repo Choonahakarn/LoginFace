@@ -64,6 +64,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const backendFace = useBackendFace();
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
   const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
+  const [enrolledIdsLoaded, setEnrolledIdsLoaded] = useState(false); // Track if we've attempted to load
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
@@ -71,6 +72,9 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   
   // Load enrolled IDs in background - use cache if available
   useEffect(() => {
+    // Reset loading state when classId changes
+    setEnrolledIdsLoaded(false);
+    
     if (!classId) {
       setEnrolledIds([]);
       setEnrolledIdsLoading(false);
@@ -84,6 +88,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       // Use cached data immediately
       setEnrolledIds(cached.ids);
       setEnrolledIdsLoading(false);
+      setEnrolledIdsLoaded(true); // Mark as loaded
       // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
@@ -101,17 +106,20 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
           setEnrolledIds(ids);
           setEnrolledIdsLoading(false);
+          setEnrolledIdsLoaded(true); // Mark as loaded
         })
         .catch(() => {
           setEnrolledIds([]);
           setEnrolledIdsLoading(false);
+          setEnrolledIdsLoaded(true); // Mark as loaded even on error (so we know we tried)
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Only calculate when enrolledIds are loaded (or if we have cache)
-  const notEnrolledCount = enrolledIdsLoading 
-    ? null // Still loading - will show loading indicator
+  // Only calculate when enrolledIds are loaded (not just when loading is false)
+  // enrolledIdsLoaded ensures we've actually attempted to fetch, not just initialized
+  const notEnrolledCount = (!enrolledIdsLoaded || enrolledIdsLoading)
+    ? null // Still loading or haven't attempted load yet - will show loading indicator
     : Math.max(0, classStudents.length - enrolledStudents.length);
   
   const todayAttendance = getTodayAttendance(classId);

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AttendanceRecord, Student } from '@/types';
 import { getSupabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
@@ -23,29 +23,49 @@ export function useAttendance() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Track if we've already loaded data for this user to prevent refetch on reconnect
+  const hasLoadedRef = useRef<{ userId: string | null; hasLoaded: boolean }>({ userId: null, hasLoaded: false });
+
   // Load attendance from Supabase
   useEffect(() => {
     if (!user) {
       setAttendance([]);
       setLoading(false);
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+      return;
+    }
+
+    // Reset flag if user changed (not just reconnect)
+    if (hasLoadedRef.current.userId !== null && hasLoadedRef.current.userId !== user.id) {
+      console.log('[useAttendance] User changed, resetting cache');
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+    }
+
+    // If we've already loaded data for this user, don't reload
+    if (hasLoadedRef.current.userId === user.id && hasLoadedRef.current.hasLoaded) {
+      console.log('[useAttendance] Using cached data for user:', user.id);
       return;
     }
 
     const loadAttendance = async () => {
       try {
-        // Load attendance records
+        // Start loading immediately - don't wait
+        setLoading(true);
+        
+        // Load attendance records - optimize query to only get recent records
         const { data, error } = await supabase
           .from('attendance')
           .select('*')
           .eq('user_id', user.id)
           .order('date', { ascending: false })
-          .order('recorded_at', { ascending: false });
+          .order('recorded_at', { ascending: false })
+          .limit(1000); // Limit to prevent loading too much data
 
         if (error) {
           console.error('Error loading attendance:', error);
           setAttendance([]);
           setLoading(false);
-          return;
+          return Promise.resolve(); // Return promise for tracking
         }
 
         // Transform to AttendanceRecord format
@@ -65,17 +85,25 @@ export function useAttendance() {
         setAttendance(transformedAttendance);
         attendanceCache = transformedAttendance;
         cacheTimestamp = Date.now();
+        setLoading(false);
+        // Mark as loaded for this user
+        hasLoadedRef.current = { userId: user.id, hasLoaded: true };
+        return Promise.resolve(); // Return promise for tracking
       } catch (error) {
         console.error('Error loading attendance:', error);
         setAttendance([]);
-      } finally {
         setLoading(false);
+        return Promise.resolve(); // Return promise even on error
       }
     };
 
     loadAttendance();
 
     // Subscribe to changes
+    // IMPORTANT: Do NOT refetch automatically - use existing data
+    // The subscription is kept for future use, but we don't refetch on events
+    // Data will be refetched only when user performs actions (recordAttendance, etc.)
+    // This prevents unnecessary refetching when switching tabs or on reconnect
     const subscription = supabase
       .channel('attendance_changes')
       .on(
@@ -87,7 +115,9 @@ export function useAttendance() {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          loadAttendance();
+          // Do nothing - use existing data
+          // Data will be updated when user performs actions (recordAttendance, etc.)
+          // This prevents refetching when switching tabs or on reconnect
         }
       )
       .subscribe();

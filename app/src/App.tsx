@@ -55,7 +55,7 @@ function AppContent() {
     }
   };
 
-  return <React.Fragment key={currentPage}>{renderPage()}</React.Fragment>;
+  return <>{renderPage()}</>;
 }
 
 function App() {

@@ -48,43 +48,65 @@ interface DashboardSectionProps {
   onNavigate: (page: AppPage) => void;
 }
 
+// Cache for enrolled IDs to avoid repeated fetches
+const enrolledIdsCache = new Map<string, { ids: string[]; timestamp: number }>();
+const CACHE_TTL = 30000; // 30 seconds
+
 export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const { authUser, signOut } = useAuth();
-  const { selectedClassId, selectedClass, updateClassroomName, updateLateGraceMinutes, deleteClassroom, loading: classroomsLoading } = useClassRoom();
+  const { selectedClassId, selectedClass, classrooms, updateClassroomName, updateLateGraceMinutes, deleteClassroom, loading: classroomsLoading } = useClassRoom();
+  
+  // Get classroom name directly from classrooms array to avoid showing placeholder
+  const currentClassroom = selectedClassId ? classrooms.find(c => c.id === selectedClassId) : null;
+  const displayClassName = currentClassroom?.name || selectedClass?.name || '';
   const { students, getStudentsByClass, loading: studentsLoading } = useStudents();
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
   const backendFace = useBackendFace();
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
-  const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   const enrolledStudents = classStudents.filter(s => enrolledIds.includes(s.id));
   
-  // Load enrolled IDs in background - don't block UI
+  // Load enrolled IDs in background - use cache if available
   useEffect(() => {
-    if (!classId || !backendFace.isAvailable) {
+    if (!classId) {
       setEnrolledIds([]);
-      setEnrolledIdsLoading(false);
       return;
     }
     
-    setEnrolledIdsLoading(true);
-    // Use a timeout to allow UI to render first
-    const timeoutId = setTimeout(() => {
+    // Check cache first
+    const cached = enrolledIdsCache.get(classId);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      setEnrolledIds(cached.ids);
+      // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
-        .then(setEnrolledIds)
-        .catch(() => setEnrolledIds([]))
-        .finally(() => setEnrolledIdsLoading(false));
-    }, 0);
-    
-    return () => clearTimeout(timeoutId);
-  }, [classId, backendFace, backendFace.faceVersion]);
+        .then(ids => {
+          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
+          setEnrolledIds(ids);
+        })
+        .catch(() => {
+          // Keep cached value on error
+        });
+    } else {
+      // No cache or expired - fetch immediately
+      backendFace.getEnrolledStudentIdsAsync(classId)
+        .then(ids => {
+          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
+          setEnrolledIds(ids);
+        })
+        .catch(() => {
+          setEnrolledIds([]);
+        });
+    }
+  }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Optimistic calculation - show count immediately, update when enrolledIds load
+  // Optimistic calculation - show count immediately
+  // If enrolledIds not loaded yet, show total students (assume all need enrollment)
   const notEnrolledCount = enrolledIds.length > 0 
     ? Math.max(0, classStudents.length - enrolledStudents.length)
-    : classStudents.length; // If not loaded yet, assume all need enrollment
+    : classStudents.length; // Optimistic: assume all need enrollment until data loads
   
   const todayAttendance = getTodayAttendance(classId);
   const stats = getAttendanceStats(classId);
@@ -123,9 +145,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">ระบบเช็คชื่อ</h1>
-                <p className="text-xs text-gray-500 hidden sm:block">
-                  {selectedClass ? `ห้อง ${selectedClass.name}` : 'โรงเรียนตัวอย่าง'}
-                </p>
+                {displayClassName && (
+                  <p className="text-xs text-gray-500 hidden sm:block">
+                    ห้อง {displayClassName}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
@@ -371,7 +395,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
 
         {/* Quick Actions */}
         <h2 className="text-xl font-bold text-gray-800 mb-4">
-          เมนูหลัก{selectedClass ? ` - ห้อง ${selectedClass.name}` : ''}
+          เมนูหลัก{displayClassName ? ` - ห้อง ${displayClassName}` : ''}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
           <Card 

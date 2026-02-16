@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Student } from '@/types';
 import { getSupabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
@@ -9,17 +9,36 @@ export function useStudents() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Track if we've already loaded data for this user to prevent refetch on reconnect
+  const hasLoadedRef = useRef<{ userId: string | null; hasLoaded: boolean }>({ userId: null, hasLoaded: false });
+
   // Load students from Supabase
   useEffect(() => {
     if (!user) {
       setStudents([]);
       setLoading(false);
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+      return;
+    }
+
+    // Reset flag if user changed (not just reconnect)
+    if (hasLoadedRef.current.userId !== null && hasLoadedRef.current.userId !== user.id) {
+      console.log('[useStudents] User changed, resetting cache');
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+    }
+
+    // If we've already loaded data for this user, don't reload
+    if (hasLoadedRef.current.userId === user.id && hasLoadedRef.current.hasLoaded) {
+      console.log('[useStudents] Using cached data for user:', user.id);
       return;
     }
 
     const loadStudents = async () => {
       try {
-        // Load students first, then relationships based on student IDs
+        // Start loading immediately
+        setLoading(true);
+        
+        // Load students first
         const studentsResult = await supabase
           .from('students')
           .select('*')
@@ -32,10 +51,9 @@ export function useStudents() {
           console.error('Error loading students:', studentsError);
           setStudents([]);
           setLoading(false);
-          return;
+          return Promise.resolve(); // Return promise for tracking
         }
 
-        // Show students immediately with empty classIds, then update with relationships
         const studentIds = studentsData?.map(s => s.id) || [];
         
         // Transform to Student format immediately (optimistic update)
@@ -56,45 +74,57 @@ export function useStudents() {
         // Set students immediately for fast UI rendering
         setStudents(transformedStudents);
         setLoading(false);
+        // Mark as loaded for this user
+        hasLoadedRef.current = { userId: user.id, hasLoaded: true };
 
-        // Load relationships in background and update
+        // Load relationships in background and update (non-blocking)
         if (studentIds.length > 0) {
-          const relationsResult = await supabase
+          // Don't await - let it update in background
+          supabase
             .from('student_classrooms')
             .select('student_id, classroom_id')
-            .in('student_id', studentIds);
+            .in('student_id', studentIds)
+            .then((relationsResult) => {
+              const { data: relationsData, error: relationsError } = relationsResult;
 
-          const { data: relationsData, error: relationsError } = relationsResult;
+              if (!relationsError && relationsData) {
+                // Build classRelationships from relations data
+                const classRelationships: Record<string, string[]> = {};
+                relationsData.forEach(rel => {
+                  if (!classRelationships[rel.student_id]) {
+                    classRelationships[rel.student_id] = [];
+                  }
+                  classRelationships[rel.student_id].push(rel.classroom_id);
+                });
 
-          if (!relationsError && relationsData) {
-            // Build classRelationships from relations data
-            const classRelationships: Record<string, string[]> = {};
-            relationsData.forEach(rel => {
-              if (!classRelationships[rel.student_id]) {
-                classRelationships[rel.student_id] = [];
+                // Update students with relationships
+                setStudents(prev => prev.map(s => ({
+                  ...s,
+                  classIds: classRelationships[s.id] || [],
+                })));
               }
-              classRelationships[rel.student_id].push(rel.classroom_id);
+            })
+            .catch(err => {
+              console.error('Error loading student relationships:', err);
             });
-
-            // Update students with relationships
-            const updatedStudents = transformedStudents.map(s => ({
-              ...s,
-              classIds: classRelationships[s.id] || [],
-            }));
-
-            setStudents(updatedStudents);
-          }
         }
+        
+        return Promise.resolve(); // Return promise for tracking
       } catch (error) {
         console.error('Error loading students:', error);
         setStudents([]);
         setLoading(false);
+        return Promise.resolve(); // Return promise even on error
       }
     };
 
     loadStudents();
 
     // Subscribe to changes
+    // IMPORTANT: Do NOT refetch automatically - use existing data
+    // The subscription is kept for future use, but we don't refetch on events
+    // Data will be refetched only when user performs actions (add/update/delete)
+    // This prevents unnecessary refetching when switching tabs or on reconnect
     const subscription = supabase
       .channel('students_changes')
       .on(
@@ -106,7 +136,9 @@ export function useStudents() {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          loadStudents();
+          // Do nothing - use existing data
+          // Data will be updated when user performs actions (addStudent, updateStudent, deleteStudent, etc.)
+          // This prevents refetching when switching tabs or on reconnect
         }
       )
       .subscribe();

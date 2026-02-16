@@ -20,10 +20,16 @@ app = FastAPI(
 # CORS Configuration - อ่าน Frontend URLs จาก Environment Variable
 # สำหรับ Production: ตั้งค่า FRONTEND_URLS ใน Railway Environment Variables
 # สำหรับ Development: ใช้ค่า default
-FRONTEND_URLS = os.getenv(
+# ตัวอย่าง: FRONTEND_URLS=https://facein.co,https://www.facein.co,http://localhost:5173
+FRONTEND_URLS_STR = os.getenv(
     "FRONTEND_URLS",
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
-).split(",")
+)
+# Strip whitespace และ filter empty strings
+FRONTEND_URLS = [url.strip() for url in FRONTEND_URLS_STR.split(",") if url.strip()]
+
+# Log CORS configuration for debugging
+logging.info(f"CORS allowed origins: {FRONTEND_URLS}")
 
 app.add_middleware(
     CORSMiddleware,

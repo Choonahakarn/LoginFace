@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AuthPage } from './AuthPage';
 import { Toaster } from '@/components/ui/sonner';
 import { Loader2 } from 'lucide-react';
+import { getSupabase } from '@/lib/supabase';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -34,6 +35,52 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   React.useEffect(() => {
     console.log('ProtectedRoute state:', { loading, isAuthenticated, hasUser: !!user, showLogin });
   }, [loading, isAuthenticated, user, showLogin]);
+
+  // Prefetch data in background when authenticated (must be outside conditional)
+  React.useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      const prefetchData = async () => {
+        try {
+          const supabase = getSupabase();
+          const userId = user.id;
+          
+          // Prefetch all data in parallel
+          Promise.all([
+            // Prefetch classrooms
+            supabase
+              .from('classrooms')
+              .select('*')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+              .then(() => console.log('[Prefetch] ✓ Classrooms')),
+            
+            // Prefetch students
+            supabase
+              .from('students')
+              .select('*')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+              .then(() => console.log('[Prefetch] ✓ Students')),
+            
+            // Prefetch attendance (recent records only)
+            supabase
+              .from('attendance')
+              .select('*')
+              .eq('user_id', userId)
+              .order('date', { ascending: false })
+              .order('recorded_at', { ascending: false })
+              .limit(100)
+              .then(() => console.log('[Prefetch] ✓ Attendance')),
+          ]).catch(err => console.error('[Prefetch] Error:', err));
+        } catch (err) {
+          console.error('[Prefetch] Error in prefetch:', err);
+        }
+      };
+      
+      // Start prefetching immediately - don't delay
+      prefetchData();
+    }
+  }, [isAuthenticated, user?.id]);
 
   // ถ้ามี user แล้ว (authenticated) แสดง content ทันที - ไม่ต้องรอ loading เสร็จ
   // ให้แต่ละ component จัดการ loading state ของตัวเอง

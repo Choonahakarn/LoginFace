@@ -52,10 +52,13 @@ interface AttendanceScanningSectionProps {
 
 export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionProps) {
   const { authUser, signOut } = useAuth();
-  const { selectedClassId, selectedClass } = useClassRoom();
+  const { selectedClassId, selectedClass, classrooms } = useClassRoom();
+  
+  // Get classroom name directly from classrooms array to avoid showing placeholder
+  const currentClassroom = selectedClassId ? classrooms.find(c => c.id === selectedClassId) : null;
+  const displayClassName = currentClassroom?.name || selectedClass?.name || '';
   const { getStudentsByClass } = useStudents();
   const { recordAttendance, getTodayAttendance, getStudentStatusToday, getStudentStatusTodaySync, clearTodayAttendance } = useAttendance();
-  const backendFace = useBackendFace();
   const classId = selectedClassId;
   const lateGraceMinutes = selectedClass?.lateGraceMinutes ?? 15;
   
@@ -154,7 +157,8 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
   const lastDisplayedStyleRef = useRef<'amber' | 'yellow' | 'green'>('amber');
 
   const [enrolledIdsFromBackend, setEnrolledIdsFromBackend] = useState<string[]>([]);
-  const { getEnrolledStudentIdsAsync, isAvailable: backendAvailable } = useBackendFace();
+  const backendFace = useBackendFace();
+  const { getEnrolledStudentIdsAsync } = backendFace;
   const classStudents = getStudentsByClass(classId);
   const enrolledStudents = classStudents.filter((s) => enrolledIdsFromBackend.includes(s.id));
   useEffect(() => {
@@ -1178,15 +1182,6 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Backend ไม่พร้อม */}
-      {backendAvailable === false && (
-        <Alert variant="destructive" className="mx-4 mt-4">
-          <AlertCircle className="w-4 h-4" />
-          <AlertDescription>
-            ไม่สามารถเชื่อมต่อ Backend ได้ — กรุณารัน Backend ก่อน: <code className="bg-red-100 px-1 rounded">cd backend && uvicorn main:app --reload</code>
-          </AlertDescription>
-        </Alert>
-      )}
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
@@ -1201,7 +1196,7 @@ export function AttendanceScanningSection({ onBack }: AttendanceScanningSectionP
               <div className="min-w-0 flex-1">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">เช็คชื่อด้วยใบหน้า</h1>
                 <p className="text-xs text-gray-500 hidden sm:block">
-                  {selectedClass ? `ห้อง ${selectedClass.name}` : 'สแกนใบหน้าเพื่อบันทึกการเข้าเรียน'}
+                  {displayClassName ? `ห้อง ${displayClassName}` : 'สแกนใบหน้าเพื่อบันทึกการเข้าเรียน'}
                 </p>
               </div>
             </div>

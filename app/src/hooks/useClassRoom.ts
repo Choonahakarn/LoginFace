@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Class } from '@/types';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { getSupabase } from '@/lib/supabase';
@@ -19,16 +19,35 @@ export function useClassRoom() {
   const [selectedClassId, setSelectedClassIdState] = useState<string | null>(loadSelectedClassId);
   const [loading, setLoading] = useState(true);
 
+  // Track if we've already loaded data for this user to prevent refetch on reconnect
+  const hasLoadedRef = useRef<{ userId: string | null; hasLoaded: boolean }>({ userId: null, hasLoaded: false });
+
   // Load classrooms from Supabase
   useEffect(() => {
     if (!user) {
       setClassrooms([]);
       setLoading(false);
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+      return;
+    }
+
+    // Reset flag if user changed (not just reconnect)
+    if (hasLoadedRef.current.userId !== null && hasLoadedRef.current.userId !== user.id) {
+      console.log('[useClassRoom] User changed, resetting cache');
+      hasLoadedRef.current = { userId: null, hasLoaded: false };
+    }
+
+    // If we've already loaded data for this user, don't reload
+    if (hasLoadedRef.current.userId === user.id && hasLoadedRef.current.hasLoaded) {
+      console.log('[useClassRoom] Using cached data for user:', user.id);
       return;
     }
 
     const loadClassrooms = async () => {
       try {
+        // Start loading immediately - don't wait
+        setLoading(true);
+        
         const { data, error } = await supabase
           .from('classrooms')
           .select('*')
@@ -52,17 +71,25 @@ export function useClassRoom() {
         }));
 
         setClassrooms(transformedClassrooms);
+        setLoading(false);
+        // Mark as loaded for this user
+        hasLoadedRef.current = { userId: user.id, hasLoaded: true };
+        return Promise.resolve(); // Return promise for tracking
       } catch (error) {
         console.error('Error loading classrooms:', error);
         setClassrooms([]);
-      } finally {
         setLoading(false);
+        return Promise.resolve(); // Return promise even on error
       }
     };
 
-    loadClassrooms();
+    const initialLoad = loadClassrooms();
 
     // Subscribe to changes
+    // IMPORTANT: Do NOT refetch automatically - use existing data
+    // The subscription is kept for future use, but we don't refetch on events
+    // Data will be refetched only when user performs actions (add/update/delete)
+    // This prevents unnecessary refetching when switching tabs or on reconnect
     const subscription = supabase
       .channel('classrooms_changes')
       .on(
@@ -74,7 +101,9 @@ export function useClassRoom() {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          loadClassrooms();
+          // Do nothing - use existing data
+          // Data will be updated when user performs actions (addClassroom, updateClassroomName, etc.)
+          // This prevents refetching when switching tabs or on reconnect
         }
       )
       .subscribe();

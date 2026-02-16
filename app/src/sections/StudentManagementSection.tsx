@@ -38,7 +38,11 @@ interface StudentManagementSectionProps {
 
 export function StudentManagementSection({ onBack, onNavigateToEnroll }: StudentManagementSectionProps) {
   const { authUser, signOut } = useAuth();
-  const { selectedClassId, selectedClass } = useClassRoom();
+  const { selectedClassId, selectedClass, classrooms } = useClassRoom();
+  
+  // Get classroom name directly from classrooms array to avoid showing placeholder
+  const currentClassroom = selectedClassId ? classrooms.find(c => c.id === selectedClassId) : null;
+  const displayClassName = currentClassroom?.name || selectedClass?.name || '';
   const classId = selectedClassId ?? 'class-1';
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
   const backendFace = useBackendFace();
@@ -172,9 +176,11 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">จัดการนักเรียน</h1>
-                <p className="text-xs text-gray-500 hidden sm:block">
-                  {selectedClass ? `เฉพาะห้อง ${selectedClass.name}` : 'เฉพาะห้องที่เลือก'} — รายชื่อและใบหน้าแยกตามห้อง (บันทึกในเครื่อง)
-                </p>
+                {displayClassName && (
+                  <p className="text-xs text-gray-500 hidden sm:block">
+                    เฉพาะห้อง {displayClassName} — รายชื่อและใบหน้าแยกตามห้อง (บันทึกในเครื่อง)
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">

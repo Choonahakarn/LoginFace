@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
@@ -44,7 +44,11 @@ interface FaceEnrollmentSectionProps {
 
 export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollmentSectionProps) {
   const { authUser, signOut } = useAuth();
-  const { selectedClassId, selectedClass } = useClassRoom();
+  const { selectedClassId, selectedClass, classrooms } = useClassRoom();
+  
+  // Get classroom name directly from classrooms array to avoid showing placeholder
+  const currentClassroom = selectedClassId ? classrooms.find(c => c.id === selectedClassId) : null;
+  const displayClassName = currentClassroom?.name || selectedClass?.name || '';
   const classId = selectedClassId;
   const { students } = useStudents();
   const backendFace = useBackendFace();
@@ -77,41 +81,149 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
     return () => window.removeEventListener('resize', checkMobileDevice);
   }, []);
 
+  // Cache for face counts and records
+  const faceCountsCache = React.useRef<Map<string, { count: number; timestamp: number }>>(new Map());
+  const faceRecordsCache = React.useRef<Map<string, { records: { enrolledAt: string; confidence: number }[]; timestamp: number }>>(new Map());
+  const CACHE_TTL = 30000; // 30 seconds
+
   const resolvedFaceCount = useCallback((sid: string) => backendFaceCounts[sid] ?? 0, [backendFaceCounts]);
   const resolvedFaceRecords = useCallback((sid: string) => backendFaceRecords[sid] ?? [], [backendFaceRecords]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId ?? null);
+  const [isLoadingFaceCounts, setIsLoadingFaceCounts] = useState(true);
+  const [hasInitializedCache, setHasInitializedCache] = useState(false);
 
+  // Load face counts for all students in class - use cache and optimistic updates
   useEffect(() => {
-    // โหลดจำนวนการลงทะเบียนใบหน้าสำหรับนักเรียนทั้งหมดในห้องเรียน
     const classStudents = students.filter(s => s.classIds.includes(classId));
-    const counts: Record<string, number> = {};
+    if (classStudents.length === 0) {
+      setIsLoadingFaceCounts(false);
+      setHasInitializedCache(true);
+      return;
+    }
+
+    // Initialize with cached values immediately (optimistic) - this prevents flickering
+    const cachedCounts: Record<string, number> = {};
+    let hasCachedData = false;
+    classStudents.forEach(student => {
+      const cached = faceCountsCache.current.get(`${classId}-${student.id}`);
+      if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+        cachedCounts[student.id] = cached.count;
+        hasCachedData = true;
+      }
+    });
+    
+    // Set cached values immediately for fast UI - prevents showing 0/5 briefly
+    if (hasCachedData) {
+      setBackendFaceCounts(prev => {
+        const updated = { ...prev, ...cachedCounts };
+        // Mark as initialized only if we have cached data for ALL students
+        const allStudentsHaveCachedData = classStudents.every(s => {
+          const cacheKey = `${classId}-${s.id}`;
+          const cached = faceCountsCache.current.get(cacheKey);
+          return cached && (Date.now() - cached.timestamp) < CACHE_TTL;
+        });
+        if (allStudentsHaveCachedData) {
+          // All students have cached data - we can show UI immediately
+          setHasInitializedCache(true);
+          setIsLoadingFaceCounts(false);
+        } else {
+          // Some students don't have cached data - wait for fetch
+          setHasInitializedCache(false);
+        }
+        return updated;
+      });
+    } else {
+      // No cache at all - we need to wait for data to load
+      setHasInitializedCache(false);
+    }
+
+    // Fetch all counts in parallel (non-blocking)
     Promise.all(
       classStudents.map(async student => {
+        const cacheKey = `${classId}-${student.id}`;
+        const cached = faceCountsCache.current.get(cacheKey);
+        
+        // Use cache if valid
+        if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+          return { studentId: student.id, count: cached.count };
+        }
+
         try {
           const c = await backendFace.getFaceEnrollmentCount(classId, student.id);
-          counts[student.id] = c;
+          faceCountsCache.current.set(cacheKey, { count: c, timestamp: Date.now() });
+          return { studentId: student.id, count: c };
         } catch (e) {
           // ถ้าเกิด error (เช่น นักเรียนยังไม่เคยลงทะเบียน) ให้เป็น 0
-          counts[student.id] = 0;
+          faceCountsCache.current.set(cacheKey, { count: 0, timestamp: Date.now() });
+          return { studentId: student.id, count: 0 };
         }
       })
-    ).then(() => {
-      setBackendFaceCounts(prev => ({ ...prev, ...counts }));
+    ).then(results => {
+      const counts: Record<string, number> = {};
+      results.forEach(({ studentId, count }) => {
+        counts[studentId] = count;
+      });
+      // Update state synchronously to prevent flickering
+      setBackendFaceCounts(prev => {
+        const updated = { ...prev, ...counts };
+        // Only mark as initialized after we have data for ALL students
+        const allStudentsHaveData = classStudents.every(s => updated[s.id] !== undefined);
+        if (allStudentsHaveData) {
+          setHasInitializedCache(true);
+          setIsLoadingFaceCounts(false);
+        }
+        return updated;
+      });
+    }).catch(err => {
+      console.error('[FaceEnrollment] Error loading face counts:', err);
+      // Even on error, mark as initialized so UI can show
+      setHasInitializedCache(true);
+      setIsLoadingFaceCounts(false);
     });
   }, [classId, backendFace, backendFace.faceVersion, students]);
 
+  // Load face count and records for selected student - use cache and parallel loading
   useEffect(() => {
     if (!selectedStudentId) return;
     const sid = selectedStudentId;
-    backendFace.getFaceEnrollmentCount(classId, sid).then(c => {
-      setBackendFaceCounts(prev => ({ ...prev, [sid]: c }));
-    });
-    backendFace.getStudentFacesAsync(classId, sid).then(recs => {
+    const cacheKey = `${classId}-${sid}`;
+
+    // Check cache for count
+    const cachedCount = faceCountsCache.current.get(cacheKey);
+    if (cachedCount && (Date.now() - cachedCount.timestamp) < CACHE_TTL) {
+      setBackendFaceCounts(prev => ({ ...prev, [sid]: cachedCount.count }));
+    }
+
+    // Check cache for records
+    const cachedRecords = faceRecordsCache.current.get(cacheKey);
+    if (cachedRecords && (Date.now() - cachedRecords.timestamp) < CACHE_TTL) {
+      setBackendFaceRecords(prev => ({
+        ...prev,
+        [sid]: cachedRecords.records,
+      }));
+    }
+
+    // Fetch both in parallel (non-blocking)
+    Promise.all([
+      backendFace.getFaceEnrollmentCount(classId, sid),
+      backendFace.getStudentFacesAsync(classId, sid)
+    ]).then(([count, recs]) => {
+      // Update cache
+      faceCountsCache.current.set(cacheKey, { count, timestamp: Date.now() });
+      faceRecordsCache.current.set(cacheKey, {
+        records: recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
+        timestamp: Date.now()
+      });
+
+      // Update state
+      setBackendFaceCounts(prev => ({ ...prev, [sid]: count }));
       setBackendFaceRecords(prev => ({
         ...prev,
         [sid]: recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
       }));
+    }).catch(err => {
+      console.error('[FaceEnrollment] Error loading student face data:', err);
     });
   }, [selectedStudentId, classId, backendFace, backendFace.faceVersion]);
 
@@ -120,9 +232,12 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   }, [initialStudentId]);
 
   /** แสดงเฉพาะที่ยังไม่ครบ 5 รูป — แสดงทุกคนที่ยังไม่ครบ 5 รูป */
-  const studentsNeedingEnrollment = students
-    .filter(s => s.classIds.includes(classId))
-    .filter(s => resolvedFaceCount(s.id) < 5);
+  // Only filter if we have initialized cache to prevent showing 0/5 briefly
+  const studentsNeedingEnrollment = hasInitializedCache
+    ? students
+        .filter(s => s.classIds.includes(classId))
+        .filter(s => resolvedFaceCount(s.id) < 5)
+    : [];
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -146,6 +261,20 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Preload MediaPipe models when component mounts to speed up first capture
+  useEffect(() => {
+    if (!isMediaPipeLoaded()) {
+      console.log('[FaceEnrollment] Preloading MediaPipe face detector...');
+      loadMediaPipeFaceDetector()
+        .then(() => {
+          console.log('[FaceEnrollment] ✓ MediaPipe preloaded');
+        })
+        .catch(err => {
+          console.error('[FaceEnrollment] Error preloading MediaPipe:', err);
+        });
+    }
+  }, []);
+
   const startCamera = useCallback(async (facing?: 'user' | 'environment') => {
     const facingModeToUse = facing ?? facingMode;
     try {
@@ -158,6 +287,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
         streamRef.current = null;
       }
       
+      // MediaPipe should already be loaded from preload, but check anyway
       if (!isMediaPipeLoaded()) {
         setIsModelsLoading(true);
         await loadMediaPipeFaceDetector();
@@ -215,10 +345,18 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
         setIsCapturing(false);
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // ลบ delay ที่ไม่จำเป็น - ทำให้เร็วขึ้น
       const video = videoRef.current!;
       const ts = performance.now();
+      
+      // Update progress immediately
+      setCaptureProgress(10);
+      
       const detection = await detectFaceFromVideo(video, ts);
+      
+      // Update progress after face detection
+      setCaptureProgress(30);
 
       // การลงทะเบียน: ใช้กล้อง (3D) เท่านั้น - เก็บ face embedding จากกล้องจริง
       // ข้อมูลที่เก็บคือ face embedding (เวกเตอร์) ที่สามารถใช้สำหรับการเช็คชื่อ (3D) ได้
@@ -255,27 +393,65 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
       }
 
       console.log('[captureFace] กำลังส่งไป Backend — studentId=', selectedStudentId, 'base64_len=', base64.length);
+      
+      // Update progress before sending to backend
+      setCaptureProgress(50);
+      
       try {
         await tryEnroll(base64);
+        
+        // Update progress after enrollment
+        setCaptureProgress(80);
+        
         // ถ้า tryEnroll สำเร็จ (ไม่ใช่ duplicate) ให้ดำเนินการต่อ
         // ถ้าเป็น duplicate จะแสดง Dialog และรอให้ผู้ใช้เลือก (ไม่มาถึงบรรทัดนี้)
-        setCaptureProgress(100);
-        const newCount = await backendFace.getFaceEnrollmentCount(classId, selectedStudentId);
-        setBackendFaceCounts(prev => ({ ...prev, [selectedStudentId]: newCount }));
-        backendFace.getStudentFacesAsync(classId, selectedStudentId).then(recs => {
-          setBackendFaceRecords(prev => ({
-            ...prev,
-            [selectedStudentId]: recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
-          }));
-        });
+        
+        // Show success immediately with optimistic count
+        const optimisticCount = countBefore + 1;
+        setBackendFaceCounts(prev => ({ ...prev, [selectedStudentId]: optimisticCount }));
         setSuccess(
-          newCount >= 5
+          optimisticCount >= 5
             ? 'ครบ 5 รายการแล้ว!'
-            : `บันทึกใบหน้าที่ ${newCount} สำเร็จ! — ตอนนี้ ${newCount}/5 กด "บันทึกใบหน้า" อีกครั้งเพื่อเพิ่มหน้าถัดไป`
+            : `บันทึกใบหน้าที่ ${optimisticCount} สำเร็จ! — ตอนนี้ ${optimisticCount}/5 กด "บันทึกใบหน้า" อีกครั้งเพื่อเพิ่มหน้าถัดไป`
         );
         setTimeout(() => setSuccess(null), 4000);
-        if (newCount >= 5) setTimeout(() => setShowAddDialog(false), 2000);
+        if (optimisticCount >= 5) setTimeout(() => setShowAddDialog(false), 2000);
         setIsCapturing(false);
+        setCaptureProgress(100);
+        
+        // Fetch actual count and records in background (non-blocking)
+        Promise.all([
+          backendFace.getFaceEnrollmentCount(classId, selectedStudentId),
+          backendFace.getStudentFacesAsync(classId, selectedStudentId)
+        ]).then(([newCount, recs]) => {
+          const cacheKey = `${classId}-${selectedStudentId}`;
+          const records = recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence }));
+          
+          // Update cache
+          faceCountsCache.current.set(cacheKey, { count: newCount, timestamp: Date.now() });
+          faceRecordsCache.current.set(cacheKey, { records, timestamp: Date.now() });
+          
+          // Update with actual data
+          setBackendFaceCounts(prev => ({ ...prev, [selectedStudentId]: newCount }));
+          setBackendFaceRecords(prev => ({
+            ...prev,
+            [selectedStudentId]: records,
+          }));
+          
+          // Update success message if count changed
+          if (newCount !== optimisticCount) {
+            setSuccess(
+              newCount >= 5
+                ? 'ครบ 5 รายการแล้ว!'
+                : `บันทึกใบหน้าที่ ${newCount} สำเร็จ! — ตอนนี้ ${newCount}/5 กด "บันทึกใบหน้า" อีกครั้งเพื่อเพิ่มหน้าถัดไป`
+            );
+            setTimeout(() => setSuccess(null), 4000);
+            if (newCount >= 5) setTimeout(() => setShowAddDialog(false), 2000);
+          }
+        }).catch(err => {
+          console.error('[captureFace] Error fetching count/records:', err);
+          // Keep optimistic count if fetch fails
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'ลงทะเบียนไม่สำเร็จ';
         if (msg.includes('ไม่พบใบหน้า') && base64) {
@@ -342,12 +518,21 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
     const isLast = recs.length <= 1;
     if (!confirm(isLast ? 'ลบรายการนี้? หลังลบจะไม่มีข้อมูลใบหน้าคงเหลือ' : 'ลบรายการนี้?')) return;
     await backendFace.removeFaceByIndex(classId, studentId, index);
-    const c = await backendFace.getFaceEnrollmentCount(classId, studentId);
+    const cacheKey = `${classId}-${studentId}`;
+    const [c, recs2] = await Promise.all([
+      backendFace.getFaceEnrollmentCount(classId, studentId),
+      backendFace.getStudentFacesAsync(classId, studentId)
+    ]);
+    const records = recs2.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence }));
+    
+    // Update cache
+    faceCountsCache.current.set(cacheKey, { count: c, timestamp: Date.now() });
+    faceRecordsCache.current.set(cacheKey, { records, timestamp: Date.now() });
+    
     setBackendFaceCounts(prev => ({ ...prev, [studentId]: c }));
-    const recs2 = await backendFace.getStudentFacesAsync(classId, studentId);
     setBackendFaceRecords(prev => ({
       ...prev,
-      [studentId]: recs2.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
+      [studentId]: records,
     }));
     if (isLast) setSelectedStudentId(null);
   };
@@ -355,6 +540,12 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const handleRemoveAllFaces = async (studentId: string) => {
     if (!confirm('คุณแน่ใจหรือไม่ที่จะลบข้อมูลใบหน้าทั้งหมดของนักเรียนคนนี้?')) return;
     await backendFace.removeFaceEnrollment(classId, studentId);
+    const cacheKey = `${classId}-${studentId}`;
+    
+    // Update cache
+    faceCountsCache.current.set(cacheKey, { count: 0, timestamp: Date.now() });
+    faceRecordsCache.current.set(cacheKey, { records: [], timestamp: Date.now() });
+    
     setBackendFaceCounts(prev => ({ ...prev, [studentId]: 0 }));
     setBackendFaceRecords(prev => ({ ...prev, [studentId]: [] }));
     setSelectedStudentId(null);
@@ -369,12 +560,21 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
       await backendFace.enrollFace(classId, selectedStudentId, base64);
       setError(null);
       setRetryWithForceNewModelBase64(null);
-      const newCount = await backendFace.getFaceEnrollmentCount(classId, selectedStudentId);
+      const cacheKey = `${classId}-${selectedStudentId}`;
+      const [newCount, recs] = await Promise.all([
+        backendFace.getFaceEnrollmentCount(classId, selectedStudentId),
+        backendFace.getStudentFacesAsync(classId, selectedStudentId)
+      ]);
+      const records = recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence }));
+      
+      // Update cache
+      faceCountsCache.current.set(cacheKey, { count: newCount, timestamp: Date.now() });
+      faceRecordsCache.current.set(cacheKey, { records, timestamp: Date.now() });
+      
       setBackendFaceCounts(prev => ({ ...prev, [selectedStudentId]: newCount }));
-      const recs = await backendFace.getStudentFacesAsync(classId, selectedStudentId);
       setBackendFaceRecords(prev => ({
         ...prev,
-        [selectedStudentId]: recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
+        [selectedStudentId]: records,
       }));
       setSuccess('ล้างข้อมูลเก่าและลงทะเบียนใหม่สำเร็จ — ตอนนี้ใช้โมเดลปัจจุบันแล้ว');
       setTimeout(() => setSuccess(null), 5000);
@@ -397,19 +597,16 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
     : null;
 
   const classStudents = students.filter(s => s.classIds.includes(classId));
-  const allEnrolled = classStudents.length > 0 && classStudents.every(s => resolvedFaceCount(s.id) >= 5);
+  // Only calculate allEnrolled if we have initialized cache and loaded face counts for all students
+  // This prevents flickering between "0/5" and "all enrolled" states
+  const hasLoadedAllCounts = hasInitializedCache && classStudents.length > 0 && classStudents.every(s => {
+    // Check if we have data for this student in state
+    return backendFaceCounts[s.id] !== undefined;
+  });
+  const allEnrolled = hasLoadedAllCounts && classStudents.length > 0 && classStudents.every(s => resolvedFaceCount(s.id) >= 5);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Backend ไม่พร้อม */}
-      {backendFace.isAvailable === false && (
-        <Alert variant="destructive" className="mx-4 mt-4">
-          <AlertCircle className="w-4 h-4" />
-          <AlertDescription>
-            ไม่สามารถเชื่อมต่อ Backend ได้ — กรุณารัน Backend ก่อน: <code className="bg-red-100 px-1 rounded">cd backend && uvicorn main:app --reload</code>
-          </AlertDescription>
-        </Alert>
-      )}
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 min-w-0">
@@ -423,9 +620,11 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">จัดการใบหน้า</h1>
-                <p className="text-xs text-gray-500 hidden sm:block">
-                  {selectedClass ? `ห้อง ${selectedClass.name}` : 'ห้องที่เลือก'} — แสดงเฉพาะนักเรียนในห้องนี้ที่ยังไม่มีใบหน้า
-                </p>
+                {displayClassName && (
+                  <p className="text-xs text-gray-500 hidden sm:block">
+                    ห้อง {displayClassName} — แสดงเฉพาะนักเรียนในห้องนี้ที่ยังไม่มีใบหน้า
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
@@ -467,6 +666,13 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   <Users className="w-16 h-16 mx-auto mb-4 text-gray-400" />
                   <p className="text-lg font-medium text-gray-700">ยังไม่มีนักเรียนในห้องนี้</p>
                   <p className="text-sm mt-1">กรุณาไปที่ จัดการนักเรียน เพื่อเพิ่มนักเรียนลงในห้องก่อน</p>
+                </div>
+              ) : !hasInitializedCache || !hasLoadedAllCounts ? (
+                // Show loading state while face counts are being fetched
+                // Don't show UI until we have data for ALL students
+                <div className="text-center py-12 text-gray-500">
+                  <div className="w-16 h-16 mx-auto mb-4 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm mt-1">กำลังโหลดข้อมูล...</p>
                 </div>
               ) : allEnrolled ? (
                 <div className="text-center py-12 text-gray-500">
@@ -814,14 +1020,22 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   }
                   setDuplicateDialog(null);
                   setCaptureProgress(100);
-                  const newCount = await backendFace.getFaceEnrollmentCount(classId, selectedStudentId);
+                  const cacheKey = `${classId}-${selectedStudentId}`;
+                  const [newCount, recs] = await Promise.all([
+                    backendFace.getFaceEnrollmentCount(classId, selectedStudentId),
+                    backendFace.getStudentFacesAsync(classId, selectedStudentId)
+                  ]);
+                  const records = recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence }));
+                  
+                  // Update cache
+                  faceCountsCache.current.set(cacheKey, { count: newCount, timestamp: Date.now() });
+                  faceRecordsCache.current.set(cacheKey, { records, timestamp: Date.now() });
+                  
                   setBackendFaceCounts(prev => ({ ...prev, [selectedStudentId]: newCount }));
-                  backendFace.getStudentFacesAsync(classId, selectedStudentId).then(recs => {
-                    setBackendFaceRecords(prev => ({
-                      ...prev,
-                      [selectedStudentId]: recs.map(r => ({ enrolledAt: r.enrolledAt, confidence: r.confidence })),
-                    }));
-                  });
+                  setBackendFaceRecords(prev => ({
+                    ...prev,
+                    [selectedStudentId]: records,
+                  }));
                   setSuccess(
                     newCount >= 5
                       ? 'ครบ 5 รายการแล้ว!'

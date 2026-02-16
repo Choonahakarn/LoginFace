@@ -15,7 +15,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, loading, user } = useAuth();
 
-  // ถ้า loading นานเกินไป (มากกว่า 2 วินาที) ให้แสดง login page
+  // ถ้า loading นานเกินไป (มากกว่า 3 วินาที) ให้แสดง login page
   const [showLogin, setShowLogin] = React.useState(false);
   
   React.useEffect(() => {
@@ -23,7 +23,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       const timer = setTimeout(() => {
         console.warn('ProtectedRoute: Loading timeout - showing login page');
         setShowLogin(true);
-      }, 2000); // 2 วินาที
+      }, 3000); // 3 วินาที
       return () => clearTimeout(timer);
     } else {
       setShowLogin(false);
@@ -35,8 +35,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     console.log('ProtectedRoute state:', { loading, isAuthenticated, hasUser: !!user, showLogin });
   }, [loading, isAuthenticated, user, showLogin]);
 
-  // ถ้า loading เสร็จแล้วและ authenticated แล้ว แสดง content
-  if (!loading && isAuthenticated && user) {
+  // ถ้ามี user แล้ว (authenticated) แสดง content ทันที - ไม่ต้องรอ loading เสร็จ
+  // ให้แต่ละ component จัดการ loading state ของตัวเอง
+  if (isAuthenticated && user) {
     return <><Toaster />{children}</>;
   }
 
@@ -52,13 +53,13 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <><Toaster /><AuthPage /></>;
   }
 
-  // กำลัง loading
+  // กำลัง loading auth (แสดงแค่ตอนแรกเท่านั้น)
   return (
     <>
       <Toaster />
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-        <p className="ml-3 text-gray-600">กำลังโหลด...</p>
+        <p className="ml-3 text-gray-600">กำลังตรวจสอบการเข้าสู่ระบบ...</p>
       </div>
     </>
   );

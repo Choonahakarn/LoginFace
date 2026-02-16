@@ -18,7 +18,25 @@ export function AuthCallback() {
           return;
         }
 
-        if (data.session) {
+        if (data.session?.user) {
+          // Clear email signup tracking เมื่อ user ยืนยันอีเมลสำเร็จแล้ว
+          if (data.session.user.email_confirmed_at) {
+            try {
+              const EMAIL_SIGNUP_TRACKING_KEY = 'email_signup_tracking';
+              const stored = localStorage.getItem(EMAIL_SIGNUP_TRACKING_KEY);
+              if (stored) {
+                const tracking: Record<string, any> = JSON.parse(stored);
+                const email = data.session.user.email?.toLowerCase();
+                if (email && tracking[email]) {
+                  delete tracking[email];
+                  localStorage.setItem(EMAIL_SIGNUP_TRACKING_KEY, JSON.stringify(tracking));
+                  console.log('Cleared email signup tracking for:', email);
+                }
+              }
+            } catch (e) {
+              console.error('Error clearing email signup tracking:', e);
+            }
+          }
           window.location.href = '/';
         } else {
           window.location.href = '/';

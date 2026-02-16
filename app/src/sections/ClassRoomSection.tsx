@@ -173,7 +173,12 @@ export function ClassRoomSection({ onEnter }: ClassRoomSectionProps) {
               สร้างห้องเรียน
             </Button>
 
-            {classrooms.length > 0 ? (
+            {classroomsLoading ? (
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-gray-500">กำลังโหลดข้อมูลห้องเรียน...</p>
+              </div>
+            ) : classrooms.length > 0 ? (
               <div className="space-y-3">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

@@ -19,12 +19,14 @@ export function useStudents() {
 
     const loadStudents = async () => {
       try {
-        // Load students
-        const { data: studentsData, error: studentsError } = await supabase
+        // Load students first, then relationships based on student IDs
+        const studentsResult = await supabase
           .from('students')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
+
+        const { data: studentsData, error: studentsError } = studentsResult;
 
         if (studentsError) {
           console.error('Error loading students:', studentsError);
@@ -33,27 +35,10 @@ export function useStudents() {
           return;
         }
 
-        // Load student_classrooms relationships
+        // Show students immediately with empty classIds, then update with relationships
         const studentIds = studentsData?.map(s => s.id) || [];
-        let classRelationships: Record<string, string[]> = {};
-
-        if (studentIds.length > 0) {
-          const { data: relationsData, error: relationsError } = await supabase
-            .from('student_classrooms')
-            .select('student_id, classroom_id')
-            .in('student_id', studentIds);
-
-          if (!relationsError && relationsData) {
-            relationsData.forEach(rel => {
-              if (!classRelationships[rel.student_id]) {
-                classRelationships[rel.student_id] = [];
-              }
-              classRelationships[rel.student_id].push(rel.classroom_id);
-            });
-          }
-        }
-
-        // Transform to Student format
+        
+        // Transform to Student format immediately (optimistic update)
         const transformedStudents: Student[] = (studentsData || []).map(s => ({
           id: s.id,
           studentId: s.student_id,
@@ -65,14 +50,44 @@ export function useStudents() {
           status: s.status as Student['status'],
           faceEnrolled: s.face_enrolled || false,
           faceEnrollmentCount: s.face_enrollment_count || 0,
-          classIds: classRelationships[s.id] || [],
+          classIds: [], // Will be updated below
         }));
 
+        // Set students immediately for fast UI rendering
         setStudents(transformedStudents);
+        setLoading(false);
+
+        // Load relationships in background and update
+        if (studentIds.length > 0) {
+          const relationsResult = await supabase
+            .from('student_classrooms')
+            .select('student_id, classroom_id')
+            .in('student_id', studentIds);
+
+          const { data: relationsData, error: relationsError } = relationsResult;
+
+          if (!relationsError && relationsData) {
+            // Build classRelationships from relations data
+            const classRelationships: Record<string, string[]> = {};
+            relationsData.forEach(rel => {
+              if (!classRelationships[rel.student_id]) {
+                classRelationships[rel.student_id] = [];
+              }
+              classRelationships[rel.student_id].push(rel.classroom_id);
+            });
+
+            // Update students with relationships
+            const updatedStudents = transformedStudents.map(s => ({
+              ...s,
+              classIds: classRelationships[s.id] || [],
+            }));
+
+            setStudents(updatedStudents);
+          }
+        }
       } catch (error) {
         console.error('Error loading students:', error);
         setStudents([]);
-      } finally {
         setLoading(false);
       }
     };

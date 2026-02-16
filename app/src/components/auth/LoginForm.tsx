@@ -8,9 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Mail, Lock, Loader2, Clock, ScanLine, Info } from 'lucide-react';
+import { Mail, Lock, Loader2, Clock, ScanLine, Info, AlertCircle } from 'lucide-react';
 import { Logo } from './Logo';
 import { FeaturesInfo } from './FeaturesInfo';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -23,6 +30,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const [rateLimitCooldown, setRateLimitCooldown] = useState<number | null>(null);
   const [showFeatures, setShowFeatures] = useState(false);
+  const [showLineLoginDialog, setShowLineLoginDialog] = useState(false);
 
   // Countdown timer สำหรับ rate limit
   useEffect(() => {
@@ -84,11 +92,10 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
       
       // รอสักครู่เพื่อให้ session ถูกตั้งค่า
       setLoading(false);
-      setTimeout(() => {
-        onSuccess?.();
-        // ใช้ window.location.href แทน reload เพื่อให้แน่ใจว่า navigate
-        window.location.href = window.location.origin;
-      }, 300);
+      
+      // ไม่ต้องใช้ window.location.href เพราะ ProtectedRoute จะ detect session อัตโนมัติ
+      // และจะแสดง AppContent โดยอัตโนมัติเมื่อ authenticated
+      onSuccess?.();
     } catch (error: any) {
       console.error('Login error:', error);
       
@@ -129,6 +136,13 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   };
 
   const handleSocialLogin = async (provider: 'line') => {
+    // แสดง Dialog popup แทนการ login จริง
+    if (provider === 'line') {
+      setShowLineLoginDialog(true);
+      return;
+    }
+
+    // สำหรับ provider อื่นๆ (ถ้ามีในอนาคต)
     try {
       const { error } = await getSupabase().auth.signInWithOAuth({
         provider: provider as any,
@@ -145,7 +159,40 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   };
 
   return (
-    <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 p-8 space-y-6">
+    <>
+      {/* Dialog สำหรับแจ้งเตือน Line Login */}
+      <Dialog open={showLineLoginDialog} onOpenChange={setShowLineLoginDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-yellow-600" />
+              </div>
+              <DialogTitle className="text-xl font-semibold text-gray-900">
+                เตรียมพร้อม Update เวอร์ชั่นหน้า
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 pt-2 space-y-3">
+              <div>
+                ตอนนี้ยังไม่สามารถ Login ด้วย Line ได้
+              </div>
+              <div className="font-medium text-gray-900">
+                💡 กรุณาใช้ Email/Password เพื่อเข้าสู่ระบบ
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 mt-4">
+            <Button
+              onClick={() => setShowLineLoginDialog(false)}
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+            >
+              เข้าใจแล้ว
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 p-8 space-y-6">
       {/* Header with Logo */}
       <div className="text-center space-y-3">
         <div className="flex justify-center">
@@ -191,7 +238,20 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-gray-700">รหัสผ่าน</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-gray-700">รหัสผ่าน</Label>
+            <button
+              type="button"
+              onClick={() => {
+                // จะเพิ่ม forgot password flow ใน AuthPage
+                const event = new CustomEvent('showForgotPassword');
+                window.dispatchEvent(event);
+              }}
+              className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              ลืมรหัสผ่าน?
+            </button>
+          </div>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
@@ -289,5 +349,6 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         <FeaturesInfo onClose={() => setShowFeatures(false)} />
       )}
     </div>
+    </>
   );
 }

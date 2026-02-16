@@ -2,7 +2,7 @@
  * ระบบเช็คชื่อนักเรียนด้วยใบหน้า
  * Face-based student attendance system
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ClassRoomSection } from '@/sections/ClassRoomSection';
 import { DashboardSection } from '@/sections/DashboardSection';
 import { StudentManagementSection } from '@/sections/StudentManagementSection';
@@ -11,6 +11,7 @@ import { AttendanceScanningSection } from '@/sections/AttendanceScanningSection'
 import { ReportsSection } from '@/sections/ReportsSection';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ConfigErrorPage } from '@/components/auth/ConfigErrorPage';
+import { ResetPasswordPage } from '@/pages/ResetPassword';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 import type { AppPage } from '@/types';
@@ -58,9 +59,27 @@ function AppContent() {
 }
 
 function App() {
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  useEffect(() => {
+    // ตรวจสอบว่ามี hash fragment สำหรับ reset password หรือไม่
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    
+    if (type === 'recovery') {
+      setShowResetPassword(true);
+    }
+  }, []);
+
   if (!isSupabaseConfigured) {
     return <ConfigErrorPage />;
   }
+
+  // แสดงหน้า reset password ถ้ามี hash fragment สำหรับ recovery
+  if (showResetPassword) {
+    return <ResetPasswordPage />;
+  }
+
   return (
     <ProtectedRoute>
       <AppContent />

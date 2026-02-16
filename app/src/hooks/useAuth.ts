@@ -166,6 +166,25 @@ export function useAuth() {
       setUser(session?.user ?? null);
       
       if (session?.user) {
+        // Clear email signup tracking เมื่อ user ยืนยันอีเมลสำเร็จแล้ว
+        if (session.user.email_confirmed_at) {
+          try {
+            const EMAIL_SIGNUP_TRACKING_KEY = 'email_signup_tracking';
+            const stored = localStorage.getItem(EMAIL_SIGNUP_TRACKING_KEY);
+            if (stored) {
+              const tracking: Record<string, any> = JSON.parse(stored);
+              const email = session.user.email?.toLowerCase();
+              if (email && tracking[email]) {
+                delete tracking[email];
+                localStorage.setItem(EMAIL_SIGNUP_TRACKING_KEY, JSON.stringify(tracking));
+                console.log('Cleared email signup tracking for:', email);
+              }
+            }
+          } catch (e) {
+            console.error('Error clearing email signup tracking:', e);
+          }
+        }
+        
         // Set authUser จาก metadata ทันที (ไม่รอ database query)
         setAuthUser({
           id: session.user.id,

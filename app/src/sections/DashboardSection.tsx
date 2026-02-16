@@ -50,21 +50,47 @@ interface DashboardSectionProps {
 
 export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const { authUser, signOut } = useAuth();
-  const { selectedClassId, selectedClass, updateClassroomName, updateLateGraceMinutes, deleteClassroom } = useClassRoom();
-  const { students, getStudentsByClass } = useStudents();
+  const { selectedClassId, selectedClass, updateClassroomName, updateLateGraceMinutes, deleteClassroom, loading: classroomsLoading } = useClassRoom();
+  const { students, getStudentsByClass, loading: studentsLoading } = useStudents();
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
   const backendFace = useBackendFace();
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
+  const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   const enrolledStudents = classStudents.filter(s => enrolledIds.includes(s.id));
+  
+  // Load enrolled IDs in background - don't block UI
   useEffect(() => {
-    backendFace.getEnrolledStudentIdsAsync(classId).then(setEnrolledIds);
+    if (!classId || !backendFace.isAvailable) {
+      setEnrolledIds([]);
+      setEnrolledIdsLoading(false);
+      return;
+    }
+    
+    setEnrolledIdsLoading(true);
+    // Use a timeout to allow UI to render first
+    const timeoutId = setTimeout(() => {
+      backendFace.getEnrolledStudentIdsAsync(classId)
+        .then(setEnrolledIds)
+        .catch(() => setEnrolledIds([]))
+        .finally(() => setEnrolledIdsLoading(false));
+    }, 0);
+    
+    return () => clearTimeout(timeoutId);
   }, [classId, backendFace, backendFace.faceVersion]);
-  const notEnrolledCount = Math.max(0, classStudents.length - enrolledStudents.length);
+  
+  // Optimistic calculation - show count immediately, update when enrolledIds load
+  const notEnrolledCount = enrolledIds.length > 0 
+    ? Math.max(0, classStudents.length - enrolledStudents.length)
+    : classStudents.length; // If not loaded yet, assume all need enrollment
+  
   const todayAttendance = getTodayAttendance(classId);
   const stats = getAttendanceStats(classId);
+  
+  // Only show loading for critical data (classrooms/students), not enrolledIds
+  const isLoading = classroomsLoading || studentsLoading;
 
   const presentToday = todayAttendance.filter(a => a.status === 'present').length;
   const lateToday = todayAttendance.filter(a => a.status === 'late').length;
@@ -283,7 +309,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-100 text-sm">นักเรียนทั้งหมด</p>
-                  <p className="text-3xl font-bold">{classStudents.length}</p>
+                  {isLoading ? (
+                    <div className="h-9 w-16 bg-blue-400/50 rounded animate-pulse mt-1" />
+                  ) : (
+                    <p className="text-3xl font-bold">{classStudents.length}</p>
+                  )}
                 </div>
                 <Users className="w-10 h-10 text-blue-200" />
               </div>
@@ -295,7 +325,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  <p className="text-3xl font-bold">{notEnrolledCount}</p>
+                  {isLoading ? (
+                    <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
+                  ) : (
+                    <p className="text-3xl font-bold">{notEnrolledCount}</p>
+                  )}
                 </div>
                 <UserCheck className="w-10 h-10 text-green-200" />
               </div>
@@ -307,7 +341,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-emerald-100 text-sm">มาเรียนวันนี้</p>
-                  <p className="text-3xl font-bold">{attendedToday}</p>
+                  {isLoading ? (
+                    <div className="h-9 w-16 bg-emerald-400/50 rounded animate-pulse mt-1" />
+                  ) : (
+                    <p className="text-3xl font-bold">{attendedToday}</p>
+                  )}
                 </div>
                 <TrendingUp className="w-10 h-10 text-emerald-200" />
               </div>
@@ -319,7 +357,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-red-100 text-sm">ขาดเรียนวันนี้</p>
-                  <p className="text-3xl font-bold">{absentToday}</p>
+                  {isLoading ? (
+                    <div className="h-9 w-16 bg-red-400/50 rounded animate-pulse mt-1" />
+                  ) : (
+                    <p className="text-3xl font-bold">{absentToday}</p>
+                  )}
                 </div>
                 <UserX className="w-10 h-10 text-red-200" />
               </div>

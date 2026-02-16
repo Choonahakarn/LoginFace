@@ -100,19 +100,6 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
         }
         setEnrolledIdsLoading(false);
       });
-      backendFace.getEnrolledStudentIdsAsync(classId)
-        .then(ids => {
-          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-          setEnrolledIdsFromApi(ids);
-          setEnrolledIdsLoading(false);
-        })
-        .catch(() => {
-          // On error, keep as null to show loading indicator instead of wrong count
-          // Don't set to [] because that would show classStudents.length which is incorrect
-          setEnrolledIdsFromApi(null);
-          setEnrolledIdsLoading(false);
-        });
-    }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
   // Only when enrolledIdsFromApi is not null AND it's an array (not null) have we received API result

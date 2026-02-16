@@ -128,7 +128,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
   const handleSocialLogin = async (provider: 'line') => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider,
+        provider: provider as any,
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
         },

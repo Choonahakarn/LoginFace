@@ -23,7 +23,7 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     let loadingProfile = false; // ป้องกันการเรียก loadUserProfile ซ้ำ
 
     // ตั้ง timeout เพื่อป้องกัน loading นานเกินไป (เพิ่มเป็น 3 วินาที)

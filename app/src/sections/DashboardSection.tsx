@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
@@ -62,87 +62,55 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const { students, getStudentsByClass, loading: studentsLoading } = useStudents();
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
   const backendFace = useBackendFace();
-  const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
+  // null = ยังไม่ได้รับข้อมูลจาก API, [] = โหลดแล้วไม่มีใครลงทะเบียน, [...] = โหลดแล้วมีรายชื่อ
+  // ใช้ null แยกจาก [] เพื่อไม่ให้มีช่วงที่แสดง classStudents.length (เพราะเคยใช้ enrolledIds=[])
+  const [enrolledIdsFromApi, setEnrolledIdsFromApi] = useState<string[] | null>(null);
   const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
-  const [enrolledIdsLoaded, setEnrolledIdsLoaded] = useState(false); // Track if we've attempted to load
-  const fetchCompletedRef = useRef<boolean>(false); // Track if fetch has actually completed
-  const hasFetchedRef = useRef<boolean>(false); // Track if we've ever fetched for this classId
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   
-  // Load enrolled IDs in background - use cache if available
+  // Load enrolled IDs from API; set enrolledIdsFromApi only in .then() so we never show wrong count
   useEffect(() => {
-    // Reset loading state when classId changes
-    setEnrolledIdsLoaded(false);
-    setEnrolledIds([]); // Clear previous data when classId changes
-    fetchCompletedRef.current = false; // Reset fetch completion flag
-    hasFetchedRef.current = false; // Reset fetch tracking
+    setEnrolledIdsFromApi(null); // always show loading until we get API result
+    setEnrolledIdsLoading(true);
     
     if (!classId) {
-      setEnrolledIds([]);
+      setEnrolledIdsFromApi([]);
       setEnrolledIdsLoading(false);
-      setEnrolledIdsLoaded(false);
-      fetchCompletedRef.current = false;
-      hasFetchedRef.current = false;
       return;
     }
     
-    // Check cache first
     const cached = enrolledIdsCache.get(classId);
     const now = Date.now();
     if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      // Use cached data immediately
-      setEnrolledIds(cached.ids);
+      setEnrolledIdsFromApi(cached.ids);
       setEnrolledIdsLoading(false);
-      setEnrolledIdsLoaded(true); // Mark as loaded
-      fetchCompletedRef.current = true; // Mark fetch as completed
-      hasFetchedRef.current = true; // Mark that we've fetched
-      // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-          setEnrolledIds(ids);
+          setEnrolledIdsFromApi(ids);
         })
-        .catch(() => {
-          // Keep cached value on error
-        });
+        .catch(() => {});
     } else {
-      // No cache or expired - fetch immediately
-      setEnrolledIdsLoading(true);
-      fetchCompletedRef.current = false;
-      hasFetchedRef.current = false;
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-          setEnrolledIds(ids);
+          setEnrolledIdsFromApi(ids);
           setEnrolledIdsLoading(false);
-          setEnrolledIdsLoaded(true); // Mark as loaded
-          fetchCompletedRef.current = true; // Mark fetch as completed
-          hasFetchedRef.current = true; // Mark that we've fetched
         })
         .catch(() => {
-          setEnrolledIds([]);
+          setEnrolledIdsFromApi([]);
           setEnrolledIdsLoading(false);
-          setEnrolledIdsLoaded(true); // Mark as loaded even on error (so we know we tried)
-          fetchCompletedRef.current = true; // Mark fetch as completed even on error
-          hasFetchedRef.current = true; // Mark that we've fetched even on error
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Only calculate enrolledStudents when fetch has actually completed
-  // This prevents showing incorrect count during initial render
-  const enrolledStudents = (enrolledIdsLoaded && !enrolledIdsLoading && fetchCompletedRef.current && hasFetchedRef.current)
-    ? classStudents.filter(s => enrolledIds.includes(s.id))
-    : [];
-  
-  // Only calculate when fetch has actually completed AND we've fetched at least once
-  // hasFetchedRef ensures we've actually made a fetch call, not just initialized
-  // fetchCompletedRef ensures the fetch has completed (success or error)
-  const notEnrolledCount = (!hasFetchedRef.current || !fetchCompletedRef.current || !enrolledIdsLoaded || enrolledIdsLoading)
-    ? null // Still loading or fetch hasn't completed yet - show loading indicator
-    : Math.max(0, classStudents.length - enrolledStudents.length);
+  // Only when enrolledIdsFromApi is not null have we received API result; then safe to show count
+  const notEnrolledCount =
+    enrolledIdsFromApi === null
+      ? null
+      : Math.max(0, classStudents.length - classStudents.filter(s => enrolledIdsFromApi.includes(s.id)).length);
   
   const todayAttendance = getTodayAttendance(classId);
   const stats = getAttendanceStats(classId);

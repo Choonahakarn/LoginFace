@@ -63,6 +63,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
   const backendFace = useBackendFace();
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
+  const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
@@ -72,6 +73,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   useEffect(() => {
     if (!classId) {
       setEnrolledIds([]);
+      setEnrolledIdsLoading(false);
       return;
     }
     
@@ -79,7 +81,9 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     const cached = enrolledIdsCache.get(classId);
     const now = Date.now();
     if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      // Use cached data immediately
       setEnrolledIds(cached.ids);
+      setEnrolledIdsLoading(false);
       // Still refresh in background
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
@@ -91,22 +95,24 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
         });
     } else {
       // No cache or expired - fetch immediately
+      setEnrolledIdsLoading(true);
       backendFace.getEnrolledStudentIdsAsync(classId)
         .then(ids => {
           enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
           setEnrolledIds(ids);
+          setEnrolledIdsLoading(false);
         })
         .catch(() => {
           setEnrolledIds([]);
+          setEnrolledIdsLoading(false);
         });
     }
   }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
   
-  // Optimistic calculation - show count immediately
-  // If enrolledIds not loaded yet, show total students (assume all need enrollment)
-  const notEnrolledCount = enrolledIds.length > 0 
-    ? Math.max(0, classStudents.length - enrolledStudents.length)
-    : classStudents.length; // Optimistic: assume all need enrollment until data loads
+  // Only calculate when enrolledIds are loaded (or if we have cache)
+  const notEnrolledCount = enrolledIdsLoading 
+    ? null // Still loading - will show loading indicator
+    : Math.max(0, classStudents.length - enrolledStudents.length);
   
   const todayAttendance = getTodayAttendance(classId);
   const stats = getAttendanceStats(classId);
@@ -349,7 +355,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  {isLoading ? (
+                  {(isLoading || enrolledIdsLoading || notEnrolledCount === null) ? (
                     <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
                   ) : (
                     <p className="text-3xl font-bold">{notEnrolledCount}</p>

@@ -80,10 +80,12 @@ export function useStudents() {
         // Load relationships in background and update (non-blocking)
         if (studentIds.length > 0) {
           // Don't await - let it update in background
-          supabase
+          const relationsPromise = supabase
             .from('student_classrooms')
             .select('student_id, classroom_id')
-            .in('student_id', studentIds)
+            .in('student_id', studentIds);
+          
+          Promise.resolve(relationsPromise)
             .then((relationsResult) => {
               const { data: relationsData, error: relationsError } = relationsResult;
 
@@ -104,7 +106,7 @@ export function useStudents() {
                 })));
               }
             })
-            .catch(err => {
+            .catch((err: unknown) => {
               console.error('Error loading student relationships:', err);
             });
         }

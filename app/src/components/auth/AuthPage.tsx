@@ -12,7 +12,7 @@ type AuthView = 'login' | 'signup' | 'forgot-password';
 
 export function AuthPage() {
   const [currentView, setCurrentView] = useState<AuthView>('login');
-  const [showPrivacy, setShowPrivacy] = useState(() => typeof window !== 'undefined' && window.location.hash === '#privacy');
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   // ฟัง event สำหรับแสดง forgot password form
   useEffect(() => {
@@ -26,12 +26,26 @@ export function AuthPage() {
     };
   }, []);
 
-  // ฟัง hash สำหรับแสดงนโยบายความเป็นส่วนตัว
+  // ฟัง hash สำหรับแสดงนโยบายความเป็นส่วนตัว - ตรวจสอบทั้งตอน mount และเมื่อ hash เปลี่ยน
   useEffect(() => {
-    const checkHash = () => setShowPrivacy(window.location.hash === '#privacy');
+    const checkHash = () => {
+      const hash = window.location.hash;
+      setShowPrivacy(hash === '#privacy');
+    };
+    
+    // ตรวจสอบทันทีเมื่อ component mount (สำหรับกรณีที่ URL มี #privacy อยู่แล้ว)
     checkHash();
+    
+    // ฟัง hashchange event
     window.addEventListener('hashchange', checkHash);
-    return () => window.removeEventListener('hashchange', checkHash);
+    
+    // ตรวจสอบซ้ำหลังจาก mount เพื่อให้แน่ใจ (สำหรับกรณีที่ hash ยังไม่พร้อมตอน initial render)
+    const timeoutId = setTimeout(checkHash, 100);
+    
+    return () => {
+      window.removeEventListener('hashchange', checkHash);
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const handlePrivacyBack = () => {

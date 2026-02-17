@@ -20,12 +20,28 @@ import type { AppPage } from '@/types';
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<AppPage>('classroom');
   const [enrollTargetStudentId, setEnrollTargetStudentId] = useState<string | null>(null);
-  const [hash, setHash] = useState(() => typeof window !== 'undefined' ? window.location.hash : '');
+  const [hash, setHash] = useState('');
 
   useEffect(() => {
-    const handler = () => setHash(window.location.hash);
+    const checkHash = () => {
+      const currentHash = window.location.hash;
+      setHash(currentHash);
+    };
+    
+    // ตรวจสอบทันทีเมื่อ component mount
+    checkHash();
+    
+    // ฟัง hashchange event
+    const handler = () => checkHash();
     window.addEventListener('hashchange', handler);
-    return () => window.removeEventListener('hashchange', handler);
+    
+    // ตรวจสอบซ้ำหลังจาก mount เพื่อให้แน่ใจ (สำหรับกรณีที่ hash ยังไม่พร้อมตอน initial render)
+    const timeoutId = setTimeout(checkHash, 100);
+    
+    return () => {
+      window.removeEventListener('hashchange', handler);
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   if (hash === '#privacy') {

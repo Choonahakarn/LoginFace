@@ -65,9 +65,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   // null = ยังไม่ได้รับข้อมูลจาก API, {} = โหลดแล้วแต่ไม่มีใครมีใบหน้า (นับเป็น 0)
   const [faceCountsFromApi, setFaceCountsFromApi] = useState<Record<string, number> | null>(null);
   const [faceCountsLoading, setFaceCountsLoading] = useState(true);
+  const [verifyingFaceCounts, setVerifyingFaceCounts] = useState(false);
   
   // Track last fetched classId and faceVersion to prevent unnecessary refetches
   const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
+  const verifiedIdsRef = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() });
 
   const classId = selectedClassId ?? null;
   const classStudents = classId ? getStudentsByClass(classId) : [];
@@ -175,6 +177,61 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       cancelled = true;
     };
   }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
+
+  // Verify suspicious zero counts using per-student /count (fixes rare mismatch/slow propagation cases)
+  useEffect(() => {
+    if (!user || !classId) {
+      setVerifyingFaceCounts(false);
+      verifiedIdsRef.current = { key: '', ids: new Set() };
+      return;
+    }
+    if (!faceCountsFromApi) return;
+
+    const key = `${user.id}:${classId}:${backendFace.faceVersion}`;
+    if (verifiedIdsRef.current.key !== key) {
+      verifiedIdsRef.current = { key, ids: new Set() };
+    }
+
+    const suspectIds = classStudents
+      .map((s) => s.id)
+      .filter((id) => (faceCountsFromApi[id] ?? 0) === 0 && !verifiedIdsRef.current.ids.has(id));
+
+    if (suspectIds.length === 0) return;
+
+    let cancelled = false;
+    setVerifyingFaceCounts(true);
+
+    Promise.all(
+      suspectIds.map(async (studentId) => {
+        const count = await backendFace.getFaceEnrollmentCount(classId, studentId);
+        return { studentId, count };
+      })
+    )
+      .then((results) => {
+        if (cancelled) return;
+        // Mark verified
+        for (const r of results) verifiedIdsRef.current.ids.add(r.studentId);
+
+        // Merge verified counts into state + cache
+        setFaceCountsFromApi((prev) => {
+          if (!prev) return prev;
+          const merged: Record<string, number> = { ...prev };
+          for (const r of results) merged[r.studentId] = r.count;
+          faceCountsCache.set(classId, { counts: merged, timestamp: Date.now() });
+          return merged;
+        });
+      })
+      .catch(() => {
+        // ignore; we'll fall back to whatever we have
+      })
+      .finally(() => {
+        if (!cancelled) setVerifyingFaceCounts(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, classId, backendFace.faceVersion, faceCountsFromApi, classStudents, backendFace.getFaceEnrollmentCount]);
   
   // Only when faceCountsFromApi is not null have we received API result
   const notEnrolledCount =
@@ -431,7 +488,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  {(isLoading || faceCountsLoading || notEnrolledCount === null) ? (
+                  {(isLoading || faceCountsLoading || verifyingFaceCounts || notEnrolledCount === null) ? (
                     <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
                   ) : (
                     <p className="text-3xl font-bold">{notEnrolledCount}</p>

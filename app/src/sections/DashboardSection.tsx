@@ -53,7 +53,7 @@ const enrolledIdsCache = new Map<string, { ids: string[]; timestamp: number }>()
 const CACHE_TTL = 30000; // 30 seconds
 
 export function DashboardSection({ onNavigate }: DashboardSectionProps) {
-  const { authUser, signOut } = useAuth();
+  const { authUser, signOut, user } = useAuth();
   const { selectedClassId, selectedClass, classrooms, updateClassroomName, updateLateGraceMinutes, deleteClassroom, loading: classroomsLoading } = useClassRoom();
   
   // Get classroom name directly from classrooms array to avoid showing placeholder
@@ -70,14 +70,16 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   // Track last fetched classId and faceVersion to prevent unnecessary refetches
   const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
 
-  const classId = selectedClassId ?? 'class-1';
-  const classStudents = getStudentsByClass(classId);
+  const classId = selectedClassId ?? null;
+  const classStudents = classId ? getStudentsByClass(classId) : [];
   
   // Load enrolled IDs from API - use cache if available and still valid
   useEffect(() => {
-    if (!classId) {
-      setEnrolledIdsFromApi([]);
-      setEnrolledIdsLoading(false);
+    // IMPORTANT: wait for authenticated user; otherwise getEnrolledStudentIdsAsync returns []
+    // and Dashboard will incorrectly show "not enrolled" count = total students.
+    if (!user || !classId) {
+      setEnrolledIdsFromApi(null);
+      setEnrolledIdsLoading(true);
       lastFetchedRef.current = { classId: null, faceVersion: -1 };
       return;
     }
@@ -156,19 +158,19 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
         }
         setEnrolledIdsLoading(false);
       });
-  }, [classId, backendFace.faceVersion]); // Only depend on classId and faceVersion - getEnrolledStudentIdsAsync is stable
+  }, [classId, backendFace.faceVersion, user?.id, backendFace.getEnrolledStudentIdsAsync]);
   
   // Only when enrolledIdsFromApi is not null AND it's an array (not null) have we received API result
   // IMPORTANT: enrolledIdsFromApi === null means we haven't received API result yet, so show loading
   // enrolledIdsFromApi === [] means API returned empty array (no students enrolled), which is valid data
   // enrolledIdsFromApi === [...] means API returned list of enrolled student IDs
   const notEnrolledCount =
-    enrolledIdsFromApi === null
+    !classId || enrolledIdsFromApi === null
       ? null // Still loading - haven't received API result yet - show loading indicator
       : Math.max(0, classStudents.length - classStudents.filter(s => enrolledIdsFromApi.includes(s.id)).length);
   
-  const todayAttendance = getTodayAttendance(classId);
-  const stats = getAttendanceStats(classId);
+  const todayAttendance = classId ? getTodayAttendance(classId) : [];
+  const stats = classId ? getAttendanceStats(classId) : { present: 0, late: 0, absent: 0, total: 0 };
   
   // Only show loading for critical data (classrooms/students), not enrolledIds
   const isLoading = classroomsLoading || studentsLoading;

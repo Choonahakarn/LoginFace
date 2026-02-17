@@ -174,6 +174,21 @@ export async function getEnrolledStudentIds(userId: string, classId: string): Pr
   }
 }
 
+export async function getFaceCountsForClass(
+  userId: string,
+  classId: string
+): Promise<Record<string, number>> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/face/counts?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}`
+    );
+    const data = await res.json().catch(() => ({}));
+    return data.counts ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export async function removeFaceEnrollment(
   userId: string,
   classId: string,

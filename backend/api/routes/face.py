@@ -31,6 +31,7 @@ from schemas.face import (
     RecognizeResponse,
     CountResponse,
     EnrolledStudentsResponse,
+    FaceCountsResponse,
     DebugImageRequest,
 )
 
@@ -262,6 +263,17 @@ def get_enrolled_students(user_id: str, class_id: str):
     # Return students with at least 1 enrollment (not 5) for dashboard count
     ids = [s[0] for s in candidates if len(s[1]) >= 1]
     return EnrolledStudentsResponse(student_ids=ids)
+
+
+@router.get("/counts", response_model=FaceCountsResponse)
+def get_face_counts_for_class(user_id: str, class_id: str):
+    """Return face enrollment counts per student for a classroom.
+
+    This is used by the dashboard to compute "not enrolled" reliably in one request.
+    """
+    candidates = get_all_for_class(user_id, class_id)
+    counts = {sid: len(embs) for sid, embs in candidates}
+    return FaceCountsResponse(counts=counts)
 
 
 @router.delete("/enroll")

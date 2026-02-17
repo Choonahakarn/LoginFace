@@ -49,7 +49,7 @@ interface DashboardSectionProps {
 }
 
 // Cache for enrolled IDs to avoid repeated fetches
-const enrolledIdsCache = new Map<string, { ids: string[]; timestamp: number }>();
+const faceCountsCache = new Map<string, { counts: Record<string, number>; timestamp: number }>();
 const CACHE_TTL = 30000; // 30 seconds
 
 export function DashboardSection({ onNavigate }: DashboardSectionProps) {
@@ -62,10 +62,9 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const { students, getStudentsByClass, loading: studentsLoading } = useStudents();
   const { getTodayAttendance, getAttendanceStats } = useAttendance();
   const backendFace = useBackendFace();
-  // null = ยังไม่ได้รับข้อมูลจาก API, [] = โหลดแล้วไม่มีใครลงทะเบียน, [...] = โหลดแล้วมีรายชื่อ
-  // ใช้ null แยกจาก [] เพื่อไม่ให้มีช่วงที่แสดง classStudents.length (เพราะเคยใช้ enrolledIds=[])
-  const [enrolledIdsFromApi, setEnrolledIdsFromApi] = useState<string[] | null>(null);
-  const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
+  // null = ยังไม่ได้รับข้อมูลจาก API, {} = โหลดแล้วแต่ไม่มีใครมีใบหน้า (นับเป็น 0)
+  const [faceCountsFromApi, setFaceCountsFromApi] = useState<Record<string, number> | null>(null);
+  const [faceCountsLoading, setFaceCountsLoading] = useState(true);
   
   // Track last fetched classId and faceVersion to prevent unnecessary refetches
   const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
@@ -73,13 +72,13 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const classId = selectedClassId ?? null;
   const classStudents = classId ? getStudentsByClass(classId) : [];
   
-  // Load enrolled IDs from API - use cache if available and still valid
+  // Load face counts from API - reliable for dashboard "not enrolled"
   useEffect(() => {
     // IMPORTANT: wait for authenticated user; otherwise getEnrolledStudentIdsAsync returns []
     // and Dashboard will incorrectly show "not enrolled" count = total students.
     if (!user || !classId) {
-      setEnrolledIdsFromApi(null);
-      setEnrolledIdsLoading(true);
+      setFaceCountsFromApi(null);
+      setFaceCountsLoading(true);
       lastFetchedRef.current = { classId: null, faceVersion: -1 };
       return;
     }
@@ -92,21 +91,21 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     
     // If faceVersion changed, always clear cache and fetch fresh data
     if (faceVersionChanged) {
-      enrolledIdsCache.delete(classId);
-      setEnrolledIdsFromApi(null); // show loading until we get fresh API result
-      setEnrolledIdsLoading(true);
+      faceCountsCache.delete(classId);
+      setFaceCountsFromApi(null); // show loading until we get fresh API result
+      setFaceCountsLoading(true);
       
-      backendFace.getEnrolledStudentIdsAsync(classId)
-        .then(ids => {
-          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-          setEnrolledIdsFromApi(ids);
-          setEnrolledIdsLoading(false);
+      backendFace.getFaceCountsForClassAsync(classId)
+        .then(counts => {
+          faceCountsCache.set(classId, { counts, timestamp: Date.now() });
+          setFaceCountsFromApi(counts);
+          setFaceCountsLoading(false);
           lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
         })
         .catch(() => {
           // On error, keep as null to show loading indicator instead of wrong count
-          setEnrolledIdsFromApi(null);
-          setEnrolledIdsLoading(false);
+          setFaceCountsFromApi(null);
+          setFaceCountsLoading(false);
         });
       return;
     }
@@ -117,57 +116,57 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       lastFetchedRef.current.faceVersion === currentFaceVersion
     ) {
       // Already fetched for this exact combination - use cache if available
-      const cached = enrolledIdsCache.get(classId);
+      const cached = faceCountsCache.get(classId);
       if (cached) {
-        setEnrolledIdsFromApi(cached.ids);
-        setEnrolledIdsLoading(false);
+        setFaceCountsFromApi(cached.counts);
+        setFaceCountsLoading(false);
         return;
       }
     }
     
     // Check cache first (only if faceVersion hasn't changed)
-    const cached = enrolledIdsCache.get(classId);
+    const cached = faceCountsCache.get(classId);
     const now = Date.now();
     if (cached && (now - cached.timestamp) < CACHE_TTL) {
       // Use cached data immediately
-      setEnrolledIdsFromApi(cached.ids);
-      setEnrolledIdsLoading(false);
+      setFaceCountsFromApi(cached.counts);
+      setFaceCountsLoading(false);
       lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
       return; // Don't fetch again - use cache
     }
     
     // No cache or expired - fetch immediately
-    setEnrolledIdsFromApi(null); // show loading until we get API result
-    setEnrolledIdsLoading(true);
+    setFaceCountsFromApi(null); // show loading until we get API result
+    setFaceCountsLoading(true);
     
-    backendFace.getEnrolledStudentIdsAsync(classId)
-      .then(ids => {
-        enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
-        setEnrolledIdsFromApi(ids);
-        setEnrolledIdsLoading(false);
+    backendFace.getFaceCountsForClassAsync(classId)
+      .then(counts => {
+        faceCountsCache.set(classId, { counts, timestamp: Date.now() });
+        setFaceCountsFromApi(counts);
+        setFaceCountsLoading(false);
         lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
       })
       .catch(() => {
         // On error, check cache as fallback
-        const cached = enrolledIdsCache.get(classId);
+        const cached = faceCountsCache.get(classId);
         if (cached && classStudents.length > 0) {
-          setEnrolledIdsFromApi(cached.ids);
+          setFaceCountsFromApi(cached.counts);
         } else {
           // Keep as null to show loading indicator instead of wrong count
-          setEnrolledIdsFromApi(null);
+          setFaceCountsFromApi(null);
         }
-        setEnrolledIdsLoading(false);
+        setFaceCountsLoading(false);
       });
-  }, [classId, backendFace.faceVersion, user?.id, backendFace.getEnrolledStudentIdsAsync]);
+  }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
   
-  // Only when enrolledIdsFromApi is not null AND it's an array (not null) have we received API result
-  // IMPORTANT: enrolledIdsFromApi === null means we haven't received API result yet, so show loading
-  // enrolledIdsFromApi === [] means API returned empty array (no students enrolled), which is valid data
-  // enrolledIdsFromApi === [...] means API returned list of enrolled student IDs
+  // Only when faceCountsFromApi is not null have we received API result
   const notEnrolledCount =
-    !classId || enrolledIdsFromApi === null
+    !classId || faceCountsFromApi === null
       ? null // Still loading - haven't received API result yet - show loading indicator
-      : Math.max(0, classStudents.length - classStudents.filter(s => enrolledIdsFromApi.includes(s.id)).length);
+      : Math.max(
+          0,
+          classStudents.reduce((acc, s) => acc + ((faceCountsFromApi[s.id] ?? 0) > 0 ? 0 : 1), 0)
+        );
   
   const todayAttendance = classId ? getTodayAttendance(classId) : [];
   const stats = classId ? getAttendanceStats(classId) : { present: 0, late: 0, absent: 0, total: 0 };
@@ -415,7 +414,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  {(isLoading || enrolledIdsLoading || notEnrolledCount === null) ? (
+                  {(isLoading || faceCountsLoading || notEnrolledCount === null) ? (
                     <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
                   ) : (
                     <p className="text-3xl font-bold">{notEnrolledCount}</p>

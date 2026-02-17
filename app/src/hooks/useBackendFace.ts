@@ -11,6 +11,7 @@ import {
   testConnection,
   getFaceCount,
   getEnrolledStudentIds,
+  getFaceCountsForClass,
   removeFaceEnrollment as apiRemove,
   getFaceEnrollmentRecords,
 } from '@/api/face';
@@ -64,6 +65,14 @@ export function useBackendFace() {
     async (classId: string): Promise<string[]> => {
       if (!user) return [];
       return getEnrolledStudentIds(user.id, classId);
+    },
+    [user]
+  );
+
+  const getFaceCountsForClassAsync = useCallback(
+    async (classId: string): Promise<Record<string, number>> => {
+      if (!user) return {};
+      return getFaceCountsForClass(user.id, classId);
     },
     [user]
   );
@@ -123,6 +132,7 @@ export function useBackendFace() {
       recognize,
       getFaceEnrollmentCount,
       getEnrolledStudentIdsAsync,
+      getFaceCountsForClassAsync,
       removeFaceEnrollment,
       removeFaceByIndex,
       getStudentFacesAsync,
@@ -136,6 +146,7 @@ export function useBackendFace() {
       recognize,
       getFaceEnrollmentCount,
       getEnrolledStudentIdsAsync,
+      getFaceCountsForClassAsync,
       removeFaceEnrollment,
       removeFaceByIndex,
       getStudentFacesAsync,

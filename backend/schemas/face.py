@@ -37,5 +37,13 @@ class EnrolledStudentsResponse(BaseModel):
     student_ids: list[str]
 
 
+class FaceCountsResponse(BaseModel):
+    """Face enrollment counts for a classroom.
+
+    Key = student_id (Supabase student UUID), value = number of enrolled face embeddings (0..5).
+    """
+    counts: dict[str, int]
+
+
 class DebugImageRequest(BaseModel):
     image_base64: str

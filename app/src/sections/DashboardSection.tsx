@@ -77,11 +77,19 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     // IMPORTANT: wait for authenticated user; otherwise getEnrolledStudentIdsAsync returns []
     // and Dashboard will incorrectly show "not enrolled" count = total students.
     if (!user || !classId) {
+      if (!user) {
+        console.log('[Dashboard] Waiting for user authentication...');
+      }
+      if (!classId) {
+        console.log('[Dashboard] Waiting for classId...');
+      }
       setFaceCountsFromApi(null);
       setFaceCountsLoading(true);
       lastFetchedRef.current = { classId: null, faceVersion: -1 };
       return;
     }
+    
+    console.log('[Dashboard] Fetching counts for classId:', classId, 'userId:', user.id);
     
     const currentFaceVersion = backendFace.faceVersion;
     
@@ -109,18 +117,30 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       setLoadingOnly();
       try {
         const counts = await backendFace.getFaceCountsForClassAsync(classId);
+        // Debug: log counts to help diagnose mismatch
+        if (classStudents.length > 0) {
+          console.log('[Dashboard] Face counts from API:', counts);
+          console.log('[Dashboard] Class students IDs:', classStudents.map(s => s.id));
+          const missingIds = classStudents.filter(s => !(s.id in counts) || counts[s.id] === 0).map(s => s.id);
+          if (missingIds.length > 0) {
+            console.warn('[Dashboard] Students with missing/zero counts:', missingIds);
+          }
+        }
         setResult(counts);
         return;
-      } catch {
+      } catch (err) {
+        console.error('[Dashboard] Failed to fetch counts:', err);
         // Fallback: use /enrolled to know "has any enrollment"
         // (enough for dashboard "not enrolled" count even if /counts isn't deployed yet)
         try {
           const ids = await backendFace.getEnrolledStudentIdsAsync(classId);
+          console.log('[Dashboard] Fallback enrolled IDs:', ids);
           const fallbackCounts: Record<string, number> = {};
           for (const id of ids) fallbackCounts[id] = 1;
           setResult(fallbackCounts);
           return;
-        } catch {
+        } catch (fallbackErr) {
+          console.error('[Dashboard] Fallback also failed:', fallbackErr);
           // On error, show empty counts (0 enrolled) instead of loading forever
           if (!cancelled) {
             setFaceCountsFromApi({});
@@ -177,10 +197,23 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const notEnrolledCount =
     !classId || faceCountsFromApi === null
       ? null // Still loading - haven't received API result yet - show loading indicator
-      : Math.max(
-          0,
-          classStudents.reduce((acc, s) => acc + ((faceCountsFromApi[s.id] ?? 0) > 0 ? 0 : 1), 0)
-        );
+      : (() => {
+          const count = Math.max(
+            0,
+            classStudents.reduce((acc, s) => {
+              const studentCount = faceCountsFromApi[s.id] ?? 0;
+              // Debug: log if student has zero count
+              if (studentCount === 0 && classStudents.length <= 3) {
+                console.log(`[Dashboard] Student ${s.id} (${s.firstName} ${s.lastName}) has count: ${studentCount}`);
+              }
+              return acc + (studentCount > 0 ? 0 : 1);
+            }, 0)
+          );
+          if (count > 0 && classStudents.length <= 3) {
+            console.log(`[Dashboard] Not enrolled count: ${count}, total students: ${classStudents.length}`);
+          }
+          return count;
+        })();
   
   const todayAttendance = classId ? getTodayAttendance(classId) : [];
   const stats = classId ? getAttendanceStats(classId) : { present: 0, late: 0, absent: 0, total: 0 };

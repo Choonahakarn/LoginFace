@@ -36,6 +36,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+
+const FACE_CONSENT_KEY = 'face_enrollment_consent_given';
 
 interface FaceEnrollmentSectionProps {
   onBack: () => void;
@@ -90,6 +101,8 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
   const resolvedFaceRecords = useCallback((sid: string) => backendFaceRecords[sid] ?? [], [backendFaceRecords]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId ?? null);
+  const [showConsentDialog, setShowConsentDialog] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
   const [isLoadingFaceCounts, setIsLoadingFaceCounts] = useState(true);
   const [hasInitializedCache, setHasInitializedCache] = useState(false);
 
@@ -769,7 +782,17 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   </p>
                 </div>
                 {(faceData?.length ?? 0) < 5 && (
-                  <Button onClick={() => { setShowAddDialog(true); startCamera(); }}>
+                  <Button
+                    onClick={() => {
+                      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(FACE_CONSENT_KEY)) {
+                        setShowAddDialog(true);
+                        startCamera();
+                      } else {
+                        setConsentChecked(false);
+                        setShowConsentDialog(true);
+                      }
+                    }}
+                  >
                     <Plus className="w-4 h-4 mr-2" />
                     เพิ่มใบหน้า
                   </Button>
@@ -812,6 +835,66 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                 )}
               </CardContent>
             </Card>
+
+            {/* Consent Dialog (PDPA) — แสดงก่อนลงทะเบียนใบหน้า */}
+            <Dialog open={showConsentDialog} onOpenChange={setShowConsentDialog}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>ความยินยอมในการเก็บข้อมูลใบหน้า</DialogTitle>
+                  <DialogDescription asChild>
+                    <div className="space-y-3 text-left">
+                      <p>
+                        ระบบจะเก็บเฉพาะ <strong>ข้อมูลใบหน้าในรูปแบบ embedding</strong> (เวกเตอร์ตัวเลข)
+                        เพื่อใช้ในการเช็คชื่อเข้าเรียน <strong>ไม่เก็บรูปภาพหรือวิดีโอ</strong> ของใบหน้า
+                        ข้อมูลนี้ใช้เทียบความเหมือนเท่านั้น แปลงย้อนกลับเป็นใบหน้าไม่ได้
+                      </p>
+                      <p>
+                        คุณสามารถถอนความยินยอมและลบข้อมูลได้ตลอดเวลาผ่านปุ่มลบในหน้านี้
+                        อ่านรายละเอียดเพิ่มเติมได้ที่{' '}
+                        <a
+                          href="#privacy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            window.open(`${window.location.origin}/#privacy`, '_blank');
+                          }}
+                        >
+                          นโยบายความเป็นส่วนตัว
+                        </a>
+                      </p>
+                      <label className="flex items-start gap-3 cursor-pointer rounded-md border p-3 hover:bg-gray-50">
+                        <Checkbox
+                          checked={consentChecked}
+                          onCheckedChange={(checked) => setConsentChecked(checked === true)}
+                        />
+                        <span className="text-sm">
+                          ข้าพเจ้ายินยอมให้เก็บและใช้ข้อมูลใบหน้าดังกล่าวเพื่อวัตถุประสงค์ในการเช็คชื่อเข้าเรียน
+                        </span>
+                      </label>
+                    </div>
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowConsentDialog(false)}>
+                    ยกเลิก
+                  </Button>
+                  <Button
+                    disabled={!consentChecked}
+                    onClick={() => {
+                      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(FACE_CONSENT_KEY, '1');
+                      setShowConsentDialog(false);
+                      setConsentChecked(false);
+                      setShowAddDialog(true);
+                      startCamera();
+                    }}
+                  >
+                    ยืนยัน
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Add Face Dialog */}
             {showAddDialog && (

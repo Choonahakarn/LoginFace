@@ -590,6 +590,10 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
         </button>
       </div>
 
+      <p className="text-center text-xs text-gray-500 pt-4">
+        <a href="#privacy" className="text-blue-600 hover:underline">นโยบายความเป็นส่วนตัว</a>
+      </p>
+
       {/* Email Verification Popup */}
       <Dialog open={showResendEmail} onOpenChange={setShowResendEmail}>
         <DialogContent className="sm:max-w-md">

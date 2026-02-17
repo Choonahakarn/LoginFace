@@ -6,11 +6,13 @@ import { useState, useEffect } from 'react';
 import { LoginForm } from './LoginForm';
 import { SignUpForm } from './SignUpForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
+import { PrivacyPolicy } from '@/pages/PrivacyPolicy';
 
 type AuthView = 'login' | 'signup' | 'forgot-password';
 
 export function AuthPage() {
   const [currentView, setCurrentView] = useState<AuthView>('login');
+  const [showPrivacy, setShowPrivacy] = useState(() => typeof window !== 'undefined' && window.location.hash === '#privacy');
 
   // ฟัง event สำหรับแสดง forgot password form
   useEffect(() => {
@@ -23,6 +25,23 @@ export function AuthPage() {
       window.removeEventListener('showForgotPassword', handleShowForgotPassword);
     };
   }, []);
+
+  // ฟัง hash สำหรับแสดงนโยบายความเป็นส่วนตัว
+  useEffect(() => {
+    const checkHash = () => setShowPrivacy(window.location.hash === '#privacy');
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  const handlePrivacyBack = () => {
+    window.location.hash = '';
+    setShowPrivacy(false);
+  };
+
+  if (showPrivacy) {
+    return <PrivacyPolicy onBack={handlePrivacyBack} />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

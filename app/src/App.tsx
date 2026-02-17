@@ -12,6 +12,7 @@ import { ReportsSection } from '@/sections/ReportsSection';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ConfigErrorPage } from '@/components/auth/ConfigErrorPage';
 import { ResetPasswordPage } from '@/pages/ResetPassword';
+import { PrivacyPolicy } from '@/pages/PrivacyPolicy';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
 import type { AppPage } from '@/types';
@@ -19,6 +20,17 @@ import type { AppPage } from '@/types';
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<AppPage>('classroom');
   const [enrollTargetStudentId, setEnrollTargetStudentId] = useState<string | null>(null);
+  const [hash, setHash] = useState(() => typeof window !== 'undefined' ? window.location.hash : '');
+
+  useEffect(() => {
+    const handler = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
+
+  if (hash === '#privacy') {
+    return <PrivacyPolicy onBack={() => { window.location.hash = ''; setHash(''); }} />;
+  }
 
   const renderPage = () => {
     switch (currentPage) {

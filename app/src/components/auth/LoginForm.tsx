@@ -344,6 +344,10 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         </button>
       </div>
 
+      <p className="text-center text-xs text-gray-500 pt-4">
+        <a href="#privacy" className="text-blue-600 hover:underline">นโยบายความเป็นส่วนตัว</a>
+      </p>
+
       {/* Features Info Modal */}
       {showFeatures && (
         <FeaturesInfo onClose={() => setShowFeatures(false)} />

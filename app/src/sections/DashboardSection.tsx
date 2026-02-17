@@ -65,8 +65,6 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   // null = ยังไม่ได้รับข้อมูลจาก API, {} = โหลดแล้วแต่ไม่มีใครมีใบหน้า (นับเป็น 0)
   const [faceCountsFromApi, setFaceCountsFromApi] = useState<Record<string, number> | null>(null);
   const [faceCountsLoading, setFaceCountsLoading] = useState(true);
-  const [verifyingFaceCounts, setVerifyingFaceCounts] = useState(false);
-  const [allZeroResolved, setAllZeroResolved] = useState(false);
   
   // Track last fetched classId and faceVersion to prevent unnecessary refetches
   const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
@@ -123,15 +121,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           setResult(fallbackCounts);
           return;
         } catch {
-          // Keep loading UI instead of showing wrong total
+          // On error, show empty counts (0 enrolled) instead of loading forever
           if (!cancelled) {
-            setFaceCountsFromApi(null);
+            setFaceCountsFromApi({});
             setFaceCountsLoading(false);
           }
-          // Retry once shortly (covers slow backend deploy / cold starts)
-          setTimeout(() => {
-            if (!cancelled) fetchWithFallback().catch(() => {});
-          }, 1500);
         }
       }
     };
@@ -178,95 +172,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     };
   }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
 
-  // If we temporarily get "all students count = 0", don't show the total as "not enrolled" yet.
-  // Instead, quickly verify one student via /count. This avoids flashing "1" then "0".
-  useEffect(() => {
-    if (!user || !classId) {
-      setVerifyingFaceCounts(false);
-      setAllZeroResolved(false);
-      return;
-    }
-    if (!faceCountsFromApi) {
-      setAllZeroResolved(false);
-      return;
-    }
-
-    const allZeroSuspicious =
-      classStudents.length > 0 &&
-      classStudents.every((s) => (faceCountsFromApi[s.id] ?? 0) === 0);
-
-    if (!allZeroSuspicious) {
-      // Once we have any non-zero, we're good.
-      setAllZeroResolved(false);
-      return;
-    }
-    if (allZeroResolved) return;
-
-    let cancelled = false;
-    setVerifyingFaceCounts(true);
-
-    const firstStudentId = classStudents[0]?.id;
-    if (!firstStudentId) {
-      setVerifyingFaceCounts(false);
-      setAllZeroResolved(true);
-      return;
-    }
-
-    backendFace
-      .getFaceEnrollmentCount(classId, firstStudentId)
-      .then(async (count) => {
-        if (cancelled) return;
-        if (count > 0) {
-          // We *know* at least one student has faces; refetch class counts (or fallback)
-          try {
-            const counts = await backendFace.getFaceCountsForClassAsync(classId);
-            if (!cancelled) {
-              faceCountsCache.set(classId, { counts, timestamp: Date.now() });
-              setFaceCountsFromApi(counts);
-            }
-          } catch {
-            try {
-              const ids = await backendFace.getEnrolledStudentIdsAsync(classId);
-              const fallbackCounts: Record<string, number> = {};
-              for (const id of ids) fallbackCounts[id] = 1;
-              if (!cancelled) {
-                faceCountsCache.set(classId, { counts: fallbackCounts, timestamp: Date.now() });
-                setFaceCountsFromApi(fallbackCounts);
-              }
-            } catch {
-              // keep loading UI
-            }
-          }
-        } else {
-          // Likely truly none enrolled; allow showing total as not enrolled
-          setAllZeroResolved(true);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setVerifyingFaceCounts(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    user?.id,
-    classId,
-    backendFace.faceVersion,
-    faceCountsFromApi,
-    classStudents,
-    allZeroResolved,
-    backendFace.getFaceEnrollmentCount,
-    backendFace.getFaceCountsForClassAsync,
-    backendFace.getEnrolledStudentIdsAsync,
-  ]);
-  
   // Only when faceCountsFromApi is not null have we received API result
-  const allZeroSuspicious =
-    !!classId &&
-    faceCountsFromApi !== null &&
-    classStudents.length > 0 &&
-    classStudents.every((s) => (faceCountsFromApi[s.id] ?? 0) === 0);
 
   const notEnrolledCount =
     !classId || faceCountsFromApi === null
@@ -522,7 +428,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  {(isLoading || faceCountsLoading || verifyingFaceCounts || (allZeroSuspicious && !allZeroResolved) || notEnrolledCount === null) ? (
+                  {(isLoading || faceCountsLoading || notEnrolledCount === null) ? (
                     <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
                   ) : (
                     <p className="text-3xl font-bold">{notEnrolledCount}</p>

@@ -66,10 +66,10 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   const [faceCountsFromApi, setFaceCountsFromApi] = useState<Record<string, number> | null>(null);
   const [faceCountsLoading, setFaceCountsLoading] = useState(true);
   const [verifyingFaceCounts, setVerifyingFaceCounts] = useState(false);
+  const [allZeroResolved, setAllZeroResolved] = useState(false);
   
   // Track last fetched classId and faceVersion to prevent unnecessary refetches
   const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
-  const verifiedIdsRef = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() });
 
   const classId = selectedClassId ?? null;
   const classStudents = classId ? getStudentsByClass(classId) : [];
@@ -178,51 +178,69 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     };
   }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
 
-  // Verify suspicious zero counts using per-student /count (fixes rare mismatch/slow propagation cases)
+  // If we temporarily get "all students count = 0", don't show the total as "not enrolled" yet.
+  // Instead, quickly verify one student via /count. This avoids flashing "1" then "0".
   useEffect(() => {
     if (!user || !classId) {
       setVerifyingFaceCounts(false);
-      verifiedIdsRef.current = { key: '', ids: new Set() };
+      setAllZeroResolved(false);
       return;
     }
-    if (!faceCountsFromApi) return;
-
-    const key = `${user.id}:${classId}:${backendFace.faceVersion}`;
-    if (verifiedIdsRef.current.key !== key) {
-      verifiedIdsRef.current = { key, ids: new Set() };
+    if (!faceCountsFromApi) {
+      setAllZeroResolved(false);
+      return;
     }
 
-    const suspectIds = classStudents
-      .map((s) => s.id)
-      .filter((id) => (faceCountsFromApi[id] ?? 0) === 0 && !verifiedIdsRef.current.ids.has(id));
+    const allZeroSuspicious =
+      classStudents.length > 0 &&
+      classStudents.every((s) => (faceCountsFromApi[s.id] ?? 0) === 0);
 
-    if (suspectIds.length === 0) return;
+    if (!allZeroSuspicious) {
+      // Once we have any non-zero, we're good.
+      setAllZeroResolved(false);
+      return;
+    }
+    if (allZeroResolved) return;
 
     let cancelled = false;
     setVerifyingFaceCounts(true);
 
-    Promise.all(
-      suspectIds.map(async (studentId) => {
-        const count = await backendFace.getFaceEnrollmentCount(classId, studentId);
-        return { studentId, count };
-      })
-    )
-      .then((results) => {
-        if (cancelled) return;
-        // Mark verified
-        for (const r of results) verifiedIdsRef.current.ids.add(r.studentId);
+    const firstStudentId = classStudents[0]?.id;
+    if (!firstStudentId) {
+      setVerifyingFaceCounts(false);
+      setAllZeroResolved(true);
+      return;
+    }
 
-        // Merge verified counts into state + cache
-        setFaceCountsFromApi((prev) => {
-          if (!prev) return prev;
-          const merged: Record<string, number> = { ...prev };
-          for (const r of results) merged[r.studentId] = r.count;
-          faceCountsCache.set(classId, { counts: merged, timestamp: Date.now() });
-          return merged;
-        });
-      })
-      .catch(() => {
-        // ignore; we'll fall back to whatever we have
+    backendFace
+      .getFaceEnrollmentCount(classId, firstStudentId)
+      .then(async (count) => {
+        if (cancelled) return;
+        if (count > 0) {
+          // We *know* at least one student has faces; refetch class counts (or fallback)
+          try {
+            const counts = await backendFace.getFaceCountsForClassAsync(classId);
+            if (!cancelled) {
+              faceCountsCache.set(classId, { counts, timestamp: Date.now() });
+              setFaceCountsFromApi(counts);
+            }
+          } catch {
+            try {
+              const ids = await backendFace.getEnrolledStudentIdsAsync(classId);
+              const fallbackCounts: Record<string, number> = {};
+              for (const id of ids) fallbackCounts[id] = 1;
+              if (!cancelled) {
+                faceCountsCache.set(classId, { counts: fallbackCounts, timestamp: Date.now() });
+                setFaceCountsFromApi(fallbackCounts);
+              }
+            } catch {
+              // keep loading UI
+            }
+          }
+        } else {
+          // Likely truly none enrolled; allow showing total as not enrolled
+          setAllZeroResolved(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setVerifyingFaceCounts(false);
@@ -231,9 +249,25 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, classId, backendFace.faceVersion, faceCountsFromApi, classStudents, backendFace.getFaceEnrollmentCount]);
+  }, [
+    user?.id,
+    classId,
+    backendFace.faceVersion,
+    faceCountsFromApi,
+    classStudents,
+    allZeroResolved,
+    backendFace.getFaceEnrollmentCount,
+    backendFace.getFaceCountsForClassAsync,
+    backendFace.getEnrolledStudentIdsAsync,
+  ]);
   
   // Only when faceCountsFromApi is not null have we received API result
+  const allZeroSuspicious =
+    !!classId &&
+    faceCountsFromApi !== null &&
+    classStudents.length > 0 &&
+    classStudents.every((s) => (faceCountsFromApi[s.id] ?? 0) === 0);
+
   const notEnrolledCount =
     !classId || faceCountsFromApi === null
       ? null // Still loading - haven't received API result yet - show loading indicator
@@ -488,7 +522,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-100 text-sm">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-                  {(isLoading || faceCountsLoading || verifyingFaceCounts || notEnrolledCount === null) ? (
+                  {(isLoading || faceCountsLoading || verifyingFaceCounts || (allZeroSuspicious && !allZeroResolved) || notEnrolledCount === null) ? (
                     <div className="h-9 w-16 bg-green-400/50 rounded animate-pulse mt-1" />
                   ) : (
                     <p className="text-3xl font-bold">{notEnrolledCount}</p>

@@ -82,13 +82,14 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       return;
     }
     
-    // Check if we've already fetched for this classId + faceVersion combination
     const currentFaceVersion = backendFace.faceVersion;
+    
+    // Check if we've already fetched for this classId + faceVersion combination
     if (
       lastFetchedRef.current.classId === classId &&
       lastFetchedRef.current.faceVersion === currentFaceVersion
     ) {
-      // Already fetched for this combination - use cache if available
+      // Already fetched for this exact combination - use cache if available
       const cached = enrolledIdsCache.get(classId);
       if (cached) {
         setEnrolledIdsFromApi(cached.ids);
@@ -97,15 +98,24 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       }
     }
     
-    // Check cache first - if valid, use it immediately
+    // If faceVersion changed, invalidate cache and fetch fresh data
+    const faceVersionChanged = lastFetchedRef.current.classId === classId && 
+                                lastFetchedRef.current.faceVersion !== currentFaceVersion;
+    
+    // Check cache first - but invalidate if faceVersion changed
     const cached = enrolledIdsCache.get(classId);
     const now = Date.now();
-    if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      // Use cached data immediately
+    if (cached && (now - cached.timestamp) < CACHE_TTL && !faceVersionChanged) {
+      // Use cached data immediately only if faceVersion hasn't changed
       setEnrolledIdsFromApi(cached.ids);
       setEnrolledIdsLoading(false);
       lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
       return; // Don't fetch again - use cache
+    }
+    
+    // If faceVersion changed, clear cache for this classId to force fresh fetch
+    if (faceVersionChanged) {
+      enrolledIdsCache.delete(classId);
     }
     
     // No cache or expired - fetch immediately

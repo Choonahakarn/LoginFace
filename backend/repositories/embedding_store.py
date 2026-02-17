@@ -236,6 +236,46 @@ def get_all_for_class(
     return [(sid, embs) for sid, embs in by_student.items() if embs]
 
 
+def get_counts_for_class(
+    user_id: str,
+    classroom_id: str,
+) -> dict[str, int]:
+    """Return {student_id: count} for a classroom, without loading embeddings.
+
+    This is much faster and lighter than `get_all_for_class()` because it does not fetch embedding vectors.
+    """
+    if supabase is not None:
+        try:
+            # Only fetch student_id (embedding is large); count in Python.
+            response = (
+                supabase.table("face_embeddings")
+                .select("student_id")
+                .eq("user_id", user_id)
+                .eq("classroom_id", classroom_id)
+                .execute()
+            )
+            counts: dict[str, int] = {}
+            for row in response.data:
+                sid = row.get("student_id")
+                if not sid:
+                    continue
+                counts[sid] = counts.get(sid, 0) + 1
+            return counts
+        except Exception as e:
+            print(f"Error getting counts for class: {e}")
+            return {}
+
+    # JSON fallback
+    prefix = f"{user_id}:{classroom_id}:"
+    data = _json_load()
+    counts: dict[str, int] = {}
+    for k, arr in data.items():
+        if k.startswith(prefix):
+            student_id = k[len(prefix):]
+            counts[student_id] = len(arr or [])
+    return counts
+
+
 def get_normalized_embeddings_for_class(
     user_id: str,
     classroom_id: str,

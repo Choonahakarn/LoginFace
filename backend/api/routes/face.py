@@ -23,6 +23,7 @@ from repositories.embedding_store import (
     remove_all,
     remove_by_index,
     get_all_for_class,
+    get_counts_for_class,
 )
 from schemas.face import (
     EnrollRequest,
@@ -259,9 +260,9 @@ def get_enrolled_students(user_id: str, class_id: str):
     """Return student IDs that have at least 1 face enrollment (for dashboard count).
     Note: For attendance recognition, students need MIN_ENROLLMENTS_FOR_ATTENDANCE (5) images,
     but for dashboard "not enrolled" count, we check if they have ANY enrollment (>= 1)."""
-    candidates = get_all_for_class(user_id, class_id)
+    counts = get_counts_for_class(user_id, class_id)
     # Return students with at least 1 enrollment (not 5) for dashboard count
-    ids = [s[0] for s in candidates if len(s[1]) >= 1]
+    ids = [sid for sid, c in counts.items() if c >= 1]
     return EnrolledStudentsResponse(student_ids=ids)
 
 
@@ -271,8 +272,7 @@ def get_face_counts_for_class(user_id: str, class_id: str):
 
     This is used by the dashboard to compute "not enrolled" reliably in one request.
     """
-    candidates = get_all_for_class(user_id, class_id)
-    counts = {sid: len(embs) for sid, embs in candidates}
+    counts = get_counts_for_class(user_id, class_id)
     return FaceCountsResponse(counts=counts)
 
 

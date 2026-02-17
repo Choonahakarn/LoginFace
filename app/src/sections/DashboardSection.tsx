@@ -89,25 +89,58 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     const faceVersionChanged = lastFetchedRef.current.classId === classId && 
                                 lastFetchedRef.current.faceVersion !== currentFaceVersion;
     
+    let cancelled = false;
+
+    const setResult = (counts: Record<string, number>) => {
+      if (cancelled) return;
+      faceCountsCache.set(classId, { counts, timestamp: Date.now() });
+      setFaceCountsFromApi(counts);
+      setFaceCountsLoading(false);
+      lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
+    };
+
+    const setLoadingOnly = () => {
+      if (cancelled) return;
+      setFaceCountsFromApi(null);
+      setFaceCountsLoading(true);
+    };
+
+    const fetchWithFallback = async () => {
+      setLoadingOnly();
+      try {
+        const counts = await backendFace.getFaceCountsForClassAsync(classId);
+        setResult(counts);
+        return;
+      } catch {
+        // Fallback: use /enrolled to know "has any enrollment"
+        // (enough for dashboard "not enrolled" count even if /counts isn't deployed yet)
+        try {
+          const ids = await backendFace.getEnrolledStudentIdsAsync(classId);
+          const fallbackCounts: Record<string, number> = {};
+          for (const id of ids) fallbackCounts[id] = 1;
+          setResult(fallbackCounts);
+          return;
+        } catch {
+          // Keep loading UI instead of showing wrong total
+          if (!cancelled) {
+            setFaceCountsFromApi(null);
+            setFaceCountsLoading(false);
+          }
+          // Retry once shortly (covers slow backend deploy / cold starts)
+          setTimeout(() => {
+            if (!cancelled) fetchWithFallback().catch(() => {});
+          }, 1500);
+        }
+      }
+    };
+
     // If faceVersion changed, always clear cache and fetch fresh data
     if (faceVersionChanged) {
       faceCountsCache.delete(classId);
-      setFaceCountsFromApi(null); // show loading until we get fresh API result
-      setFaceCountsLoading(true);
-      
-      backendFace.getFaceCountsForClassAsync(classId)
-        .then(counts => {
-          faceCountsCache.set(classId, { counts, timestamp: Date.now() });
-          setFaceCountsFromApi(counts);
-          setFaceCountsLoading(false);
-          lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
-        })
-        .catch(() => {
-          // On error, keep as null to show loading indicator instead of wrong count
-          setFaceCountsFromApi(null);
-          setFaceCountsLoading(false);
-        });
-      return;
+      fetchWithFallback().catch(() => {});
+      return () => {
+        cancelled = true;
+      };
     }
     
     // Check if we've already fetched for this classId + faceVersion combination
@@ -135,28 +168,12 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       return; // Don't fetch again - use cache
     }
     
-    // No cache or expired - fetch immediately
-    setFaceCountsFromApi(null); // show loading until we get API result
-    setFaceCountsLoading(true);
-    
-    backendFace.getFaceCountsForClassAsync(classId)
-      .then(counts => {
-        faceCountsCache.set(classId, { counts, timestamp: Date.now() });
-        setFaceCountsFromApi(counts);
-        setFaceCountsLoading(false);
-        lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
-      })
-      .catch(() => {
-        // On error, check cache as fallback
-        const cached = faceCountsCache.get(classId);
-        if (cached && classStudents.length > 0) {
-          setFaceCountsFromApi(cached.counts);
-        } else {
-          // Keep as null to show loading indicator instead of wrong count
-          setFaceCountsFromApi(null);
-        }
-        setFaceCountsLoading(false);
-      });
+    // No cache or expired - fetch immediately (with fallback)
+    fetchWithFallback().catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
   
   // Only when faceCountsFromApi is not null have we received API result

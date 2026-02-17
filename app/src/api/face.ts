@@ -178,15 +178,16 @@ export async function getFaceCountsForClass(
   userId: string,
   classId: string
 ): Promise<Record<string, number>> {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/face/counts?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}`
-    );
-    const data = await res.json().catch(() => ({}));
-    return data.counts ?? {};
-  } catch {
-    return {};
+  const res = await fetch(
+    `${API_BASE}/api/face/counts?user_id=${encodeURIComponent(userId)}&class_id=${encodeURIComponent(classId)}`
+  );
+  if (!res.ok) {
+    // Don't silently return {} on 404/500 — it would be interpreted as "nobody enrolled"
+    // and make the dashboard show the total student count as "not enrolled".
+    throw new Error(`GET /api/face/counts failed (${res.status})`);
   }
+  const data = await res.json().catch(() => ({}));
+  return data.counts ?? {};
 }
 
 export async function removeFaceEnrollment(

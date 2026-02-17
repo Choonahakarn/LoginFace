@@ -47,19 +47,39 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
   const backendFace = useBackendFace();
   const [faceCounts, setFaceCounts] = useState<Record<string, number>>({});
+  const [faceCountsLoading, setFaceCountsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    backendFace.getEnrolledStudentIdsAsync(classId).then(async ids => {
-      const counts: Record<string, number> = {};
-      await Promise.all(
-        ids.map(async id => {
-          const c = await backendFace.getFaceEnrollmentCount(classId, id);
-          counts[id] = c;
-        })
-      );
-      setFaceCounts(prev => ({ ...prev, ...counts }));
-    });
+    let cancelled = false;
+    setFaceCountsLoading(true);
+
+    // Fast path: one request returns counts for whole class
+    backendFace
+      .getFaceCountsForClassAsync(classId)
+      .then((counts) => {
+        if (cancelled) return;
+        setFaceCounts(counts);
+      })
+      .catch(async () => {
+        // Fallback: older backend (no /counts) — compute counts for enrolled IDs (slower)
+        const ids = await backendFace.getEnrolledStudentIdsAsync(classId).catch(() => []);
+        const counts: Record<string, number> = {};
+        await Promise.all(
+          ids.map(async (id) => {
+            const c = await backendFace.getFaceEnrollmentCount(classId, id).catch(() => 0);
+            counts[id] = c;
+          })
+        );
+        if (!cancelled) setFaceCounts(counts);
+      })
+      .finally(() => {
+        if (!cancelled) setFaceCountsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [classId, backendFace, backendFace.faceVersion]);
 
   const getFaceCount = useCallback((studentId: string) => faceCounts[studentId] ?? 0, [faceCounts]);
@@ -335,7 +355,9 @@ export function StudentManagementSection({ onBack, onNavigateToEnroll }: Student
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {getFaceCount(student.id) > 0 ? (
+                          {faceCountsLoading ? (
+                            <span className="text-sm text-gray-400">กำลังโหลด...</span>
+                          ) : getFaceCount(student.id) > 0 ? (
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"

@@ -247,6 +247,7 @@ def get_counts_for_class(
     if supabase is not None:
         try:
             # Only fetch student_id (embedding is large); count in Python.
+            print(f"[get_counts_for_class] Querying for user_id={user_id}, classroom_id={classroom_id}")
             response = (
                 supabase.table("face_embeddings")
                 .select("student_id")
@@ -260,9 +261,12 @@ def get_counts_for_class(
                 if not sid:
                     continue
                 counts[sid] = counts.get(sid, 0) + 1
+            print(f"[get_counts_for_class] Found {len(counts)} students with enrollments: {list(counts.keys())}")
             return counts
         except Exception as e:
-            print(f"Error getting counts for class: {e}")
+            print(f"[get_counts_for_class] Error getting counts for class: {e}")
+            import traceback
+            traceback.print_exc()
             return {}
 
     # JSON fallback

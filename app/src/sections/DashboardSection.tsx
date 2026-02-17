@@ -373,6 +373,11 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
               onClick={() => {
+                if (!classId) {
+                  setShowDeleteConfirm(false);
+                  setShowClassSettings(false);
+                  return;
+                }
                 deleteClassroom(classId);
                 setShowDeleteConfirm(false);
                 setShowClassSettings(false);

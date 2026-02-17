@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useClassRoom } from '@/hooks/useClassRoom';
 import { useStudents } from '@/hooks/useStudents';
@@ -66,31 +66,61 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
   // ใช้ null แยกจาก [] เพื่อไม่ให้มีช่วงที่แสดง classStudents.length (เพราะเคยใช้ enrolledIds=[])
   const [enrolledIdsFromApi, setEnrolledIdsFromApi] = useState<string[] | null>(null);
   const [enrolledIdsLoading, setEnrolledIdsLoading] = useState(true);
+  
+  // Track last fetched classId and faceVersion to prevent unnecessary refetches
+  const lastFetchedRef = useRef<{ classId: string | null; faceVersion: number }>({ classId: null, faceVersion: -1 });
 
   const classId = selectedClassId ?? 'class-1';
   const classStudents = getStudentsByClass(classId);
   
-  // Load enrolled IDs from API; set enrolledIdsFromApi only in .then() so we never show wrong count
+  // Load enrolled IDs from API - use cache if available and still valid
   useEffect(() => {
-    setEnrolledIdsFromApi(null); // always show loading until we get API result
-    setEnrolledIdsLoading(true);
-    
     if (!classId) {
       setEnrolledIdsFromApi([]);
       setEnrolledIdsLoading(false);
+      lastFetchedRef.current = { classId: null, faceVersion: -1 };
       return;
     }
     
-    // Always fetch from API - don't use cache to prevent showing wrong count
-    // Cache might have stale data or [] which would show classStudents.length incorrectly
+    // Check if we've already fetched for this classId + faceVersion combination
+    const currentFaceVersion = backendFace.faceVersion;
+    if (
+      lastFetchedRef.current.classId === classId &&
+      lastFetchedRef.current.faceVersion === currentFaceVersion
+    ) {
+      // Already fetched for this combination - use cache if available
+      const cached = enrolledIdsCache.get(classId);
+      if (cached) {
+        setEnrolledIdsFromApi(cached.ids);
+        setEnrolledIdsLoading(false);
+        return;
+      }
+    }
+    
+    // Check cache first - if valid, use it immediately
+    const cached = enrolledIdsCache.get(classId);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      // Use cached data immediately
+      setEnrolledIdsFromApi(cached.ids);
+      setEnrolledIdsLoading(false);
+      lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
+      return; // Don't fetch again - use cache
+    }
+    
+    // No cache or expired - fetch immediately
+    setEnrolledIdsFromApi(null); // show loading until we get API result
+    setEnrolledIdsLoading(true);
+    
     backendFace.getEnrolledStudentIdsAsync(classId)
       .then(ids => {
         enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
         setEnrolledIdsFromApi(ids);
         setEnrolledIdsLoading(false);
+        lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
       })
       .catch(() => {
-        // On error, check cache as fallback only if we have students loaded
+        // On error, check cache as fallback
         const cached = enrolledIdsCache.get(classId);
         if (cached && classStudents.length > 0) {
           setEnrolledIdsFromApi(cached.ids);
@@ -100,7 +130,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
         }
         setEnrolledIdsLoading(false);
       });
-  }, [classId, backendFace.getEnrolledStudentIdsAsync, backendFace.faceVersion]);
+  }, [classId, backendFace.faceVersion]); // Only depend on classId and faceVersion - getEnrolledStudentIdsAsync is stable
   
   // Only when enrolledIdsFromApi is not null AND it's an array (not null) have we received API result
   // IMPORTANT: enrolledIdsFromApi === null means we haven't received API result yet, so show loading

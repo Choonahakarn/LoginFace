@@ -255,9 +255,12 @@ def get_face_count(user_id: str, class_id: str, student_id: str):
 
 @router.get("/enrolled", response_model=EnrolledStudentsResponse)
 def get_enrolled_students(user_id: str, class_id: str):
-    """Return student IDs that have at least MIN_ENROLLMENTS_FOR_ATTENDANCE face images (can check attendance)."""
+    """Return student IDs that have at least 1 face enrollment (for dashboard count).
+    Note: For attendance recognition, students need MIN_ENROLLMENTS_FOR_ATTENDANCE (5) images,
+    but for dashboard "not enrolled" count, we check if they have ANY enrollment (>= 1)."""
     candidates = get_all_for_class(user_id, class_id)
-    ids = [s[0] for s in candidates if len(s[1]) >= MIN_ENROLLMENTS_FOR_ATTENDANCE]
+    # Return students with at least 1 enrollment (not 5) for dashboard count
+    ids = [s[0] for s in candidates if len(s[1]) >= 1]
     return EnrolledStudentsResponse(student_ids=ids)
 
 

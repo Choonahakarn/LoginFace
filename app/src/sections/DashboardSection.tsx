@@ -84,6 +84,31 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     
     const currentFaceVersion = backendFace.faceVersion;
     
+    // Check if faceVersion changed - if so, always fetch fresh data
+    const faceVersionChanged = lastFetchedRef.current.classId === classId && 
+                                lastFetchedRef.current.faceVersion !== currentFaceVersion;
+    
+    // If faceVersion changed, always clear cache and fetch fresh data
+    if (faceVersionChanged) {
+      enrolledIdsCache.delete(classId);
+      setEnrolledIdsFromApi(null); // show loading until we get fresh API result
+      setEnrolledIdsLoading(true);
+      
+      backendFace.getEnrolledStudentIdsAsync(classId)
+        .then(ids => {
+          enrolledIdsCache.set(classId, { ids, timestamp: Date.now() });
+          setEnrolledIdsFromApi(ids);
+          setEnrolledIdsLoading(false);
+          lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
+        })
+        .catch(() => {
+          // On error, keep as null to show loading indicator instead of wrong count
+          setEnrolledIdsFromApi(null);
+          setEnrolledIdsLoading(false);
+        });
+      return;
+    }
+    
     // Check if we've already fetched for this classId + faceVersion combination
     if (
       lastFetchedRef.current.classId === classId &&
@@ -98,24 +123,15 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       }
     }
     
-    // If faceVersion changed, invalidate cache and fetch fresh data
-    const faceVersionChanged = lastFetchedRef.current.classId === classId && 
-                                lastFetchedRef.current.faceVersion !== currentFaceVersion;
-    
-    // Check cache first - but invalidate if faceVersion changed
+    // Check cache first (only if faceVersion hasn't changed)
     const cached = enrolledIdsCache.get(classId);
     const now = Date.now();
-    if (cached && (now - cached.timestamp) < CACHE_TTL && !faceVersionChanged) {
-      // Use cached data immediately only if faceVersion hasn't changed
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      // Use cached data immediately
       setEnrolledIdsFromApi(cached.ids);
       setEnrolledIdsLoading(false);
       lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
       return; // Don't fetch again - use cache
-    }
-    
-    // If faceVersion changed, clear cache for this classId to force fresh fetch
-    if (faceVersionChanged) {
-      enrolledIdsCache.delete(classId);
     }
     
     // No cache or expired - fetch immediately

@@ -117,33 +117,58 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       setLoadingOnly();
       try {
         const counts = await backendFace.getFaceCountsForClassAsync(classId);
-        // Debug: log counts to help diagnose mismatch
-        if (classStudents.length > 0) {
-          console.log('[Dashboard] Face counts from API:', counts);
-          console.log('[Dashboard] Class students IDs:', classStudents.map(s => s.id));
-          const missingIds = classStudents.filter(s => !(s.id in counts) || counts[s.id] === 0).map(s => s.id);
+        console.log('[Dashboard] Face counts from API:', counts);
+        console.log('[Dashboard] Counts keys:', Object.keys(counts));
+        
+        // Get current students (may have loaded after API call)
+        const currentStudents = classId ? getStudentsByClass(classId) : [];
+        console.log('[Dashboard] Current class students IDs:', currentStudents.map(s => s.id));
+        
+        // If counts is empty but we have students, fetch individual counts
+        if (Object.keys(counts).length === 0 && currentStudents.length > 0) {
+          console.log('[Dashboard] Empty counts but students exist, fetching individual counts...');
+          const individualCounts: Record<string, number> = {};
+          await Promise.all(
+            currentStudents.map(async (s) => {
+              try {
+                const c = await backendFace.getFaceEnrollmentCount(classId, s.id);
+                console.log(`[Dashboard] Student ${s.id} individual count: ${c}`);
+                individualCounts[s.id] = c;
+              } catch (err) {
+                console.error(`[Dashboard] Failed to get count for ${s.id}:`, err);
+                individualCounts[s.id] = 0;
+              }
+            })
+          );
+          console.log('[Dashboard] Individual counts result:', individualCounts);
+          setResult(individualCounts);
+          return;
+        }
+        
+        // Check for missing IDs even if counts is not empty
+        if (currentStudents.length > 0) {
+          const missingIds = currentStudents.filter(s => !(s.id in counts) || counts[s.id] === 0).map(s => s.id);
           if (missingIds.length > 0) {
             console.warn('[Dashboard] Students with missing/zero counts:', missingIds);
-            // If /counts returned empty but we have students, fetch individual counts as fallback
-            if (Object.keys(counts).length === 0 && classStudents.length > 0) {
-              console.log('[Dashboard] Empty counts but students exist, fetching individual counts...');
-              const individualCounts: Record<string, number> = {};
-              await Promise.all(
-                classStudents.map(async (s) => {
-                  try {
-                    const c = await backendFace.getFaceEnrollmentCount(classId, s.id);
-                    individualCounts[s.id] = c;
-                  } catch {
-                    individualCounts[s.id] = 0;
-                  }
-                })
-              );
-              console.log('[Dashboard] Individual counts:', individualCounts);
-              setResult(individualCounts);
-              return;
-            }
+            // Fetch individual counts for missing students
+            const individualCounts: Record<string, number> = { ...counts };
+            await Promise.all(
+              missingIds.map(async (studentId) => {
+                try {
+                  const c = await backendFace.getFaceEnrollmentCount(classId, studentId);
+                  console.log(`[Dashboard] Missing student ${studentId} individual count: ${c}`);
+                  individualCounts[studentId] = c;
+                } catch {
+                  individualCounts[studentId] = 0;
+                }
+              })
+            );
+            console.log('[Dashboard] Updated counts with individual:', individualCounts);
+            setResult(individualCounts);
+            return;
           }
         }
+        
         setResult(counts);
         return;
       } catch (err) {
@@ -228,7 +253,7 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync]);
+  }, [classId, backendFace.faceVersion, user?.id, backendFace.getFaceCountsForClassAsync, getStudentsByClass]);
 
   // Only when faceCountsFromApi is not null have we received API result
 

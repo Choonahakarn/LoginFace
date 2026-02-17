@@ -46,8 +46,6 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
-const FACE_CONSENT_KEY = 'face_enrollment_consent_given';
-
 interface FaceEnrollmentSectionProps {
   onBack: () => void;
   initialStudentId?: string | null;
@@ -784,13 +782,9 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                 {(faceData?.length ?? 0) < 5 && (
                   <Button
                     onClick={() => {
-                      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(FACE_CONSENT_KEY)) {
-                        setShowAddDialog(true);
-                        startCamera();
-                      } else {
-                        setConsentChecked(false);
-                        setShowConsentDialog(true);
-                      }
+                      // แสดง Consent Dialog ทุกครั้งที่กด "เพิ่มใบหน้า" (ตาม PDPA - ควรขอความยินยอมทุกครั้งสำหรับข้อมูลอ่อนไหว)
+                      setConsentChecked(false);
+                      setShowConsentDialog(true);
                     }}
                   >
                     <Plus className="w-4 h-4 mr-2" />
@@ -883,7 +877,7 @@ export function FaceEnrollmentSection({ onBack, initialStudentId }: FaceEnrollme
                   <Button
                     disabled={!consentChecked}
                     onClick={() => {
-                      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(FACE_CONSENT_KEY, '1');
+                      // ไม่เก็บ consent ใน sessionStorage - แสดงทุกครั้งเพื่อให้แน่ใจว่าผู้ใช้ยินยอมทุกครั้ง
                       setShowConsentDialog(false);
                       setConsentChecked(false);
                       setShowAddDialog(true);

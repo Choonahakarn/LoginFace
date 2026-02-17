@@ -256,12 +256,15 @@ def get_counts_for_class(
                 .execute()
             )
             counts: dict[str, int] = {}
+            print(f"[get_counts_for_class] Response data rows: {len(response.data)}")
             for row in response.data:
                 sid = row.get("student_id")
                 if not sid:
+                    print(f"[get_counts_for_class] WARNING: Row missing student_id: {row}")
                     continue
                 counts[sid] = counts.get(sid, 0) + 1
             print(f"[get_counts_for_class] Found {len(counts)} students with enrollments: {list(counts.keys())}")
+            print(f"[get_counts_for_class] Counts detail: {counts}")
             return counts
         except Exception as e:
             print(f"[get_counts_for_class] Error getting counts for class: {e}")

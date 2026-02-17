@@ -272,7 +272,9 @@ def get_face_counts_for_class(user_id: str, class_id: str):
 
     This is used by the dashboard to compute "not enrolled" reliably in one request.
     """
+    print(f"[get_face_counts_for_class] Request: user_id={user_id}, class_id={class_id}")
     counts = get_counts_for_class(user_id, class_id)
+    print(f"[get_face_counts_for_class] Returning counts: {counts}")
     return FaceCountsResponse(counts=counts)
 
 

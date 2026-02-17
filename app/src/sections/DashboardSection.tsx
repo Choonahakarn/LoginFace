@@ -222,6 +222,9 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       };
     }
     
+    // Get current students to check if cache is valid
+    const currentStudents = classId ? getStudentsByClass(classId) : [];
+    
     // Check if we've already fetched for this classId + faceVersion combination
     if (
       lastFetchedRef.current.classId === classId &&
@@ -230,9 +233,17 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
       // Already fetched for this exact combination - use cache if available
       const cached = faceCountsCache.get(classId);
       if (cached) {
-        setFaceCountsFromApi(cached.counts);
-        setFaceCountsLoading(false);
-        return;
+        // If cache is empty but we have students, it's likely invalid - refetch
+        if (Object.keys(cached.counts).length === 0 && currentStudents.length > 0) {
+          console.log('[Dashboard] Cache is empty but students exist, refetching...');
+          faceCountsCache.delete(classId);
+          // Fall through to fetchWithFallback
+        } else {
+          console.log('[Dashboard] Using cached counts:', cached.counts);
+          setFaceCountsFromApi(cached.counts);
+          setFaceCountsLoading(false);
+          return;
+        }
       }
     }
     
@@ -240,11 +251,18 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
     const cached = faceCountsCache.get(classId);
     const now = Date.now();
     if (cached && (now - cached.timestamp) < CACHE_TTL) {
-      // Use cached data immediately
-      setFaceCountsFromApi(cached.counts);
-      setFaceCountsLoading(false);
-      lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
-      return; // Don't fetch again - use cache
+      // If cache is empty but we have students, it's likely invalid - refetch
+      if (Object.keys(cached.counts).length === 0 && currentStudents.length > 0) {
+        console.log('[Dashboard] Cache is empty but students exist, refetching...');
+        faceCountsCache.delete(classId);
+        // Fall through to fetchWithFallback
+      } else {
+        console.log('[Dashboard] Using cached counts:', cached.counts);
+        setFaceCountsFromApi(cached.counts);
+        setFaceCountsLoading(false);
+        lastFetchedRef.current = { classId, faceVersion: currentFaceVersion };
+        return; // Don't fetch again - use cache
+      }
     }
     
     // No cache or expired - fetch immediately (with fallback)

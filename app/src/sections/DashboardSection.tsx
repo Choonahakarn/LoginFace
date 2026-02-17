@@ -124,6 +124,24 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           const missingIds = classStudents.filter(s => !(s.id in counts) || counts[s.id] === 0).map(s => s.id);
           if (missingIds.length > 0) {
             console.warn('[Dashboard] Students with missing/zero counts:', missingIds);
+            // If /counts returned empty but we have students, fetch individual counts as fallback
+            if (Object.keys(counts).length === 0 && classStudents.length > 0) {
+              console.log('[Dashboard] Empty counts but students exist, fetching individual counts...');
+              const individualCounts: Record<string, number> = {};
+              await Promise.all(
+                classStudents.map(async (s) => {
+                  try {
+                    const c = await backendFace.getFaceEnrollmentCount(classId, s.id);
+                    individualCounts[s.id] = c;
+                  } catch {
+                    individualCounts[s.id] = 0;
+                  }
+                })
+              );
+              console.log('[Dashboard] Individual counts:', individualCounts);
+              setResult(individualCounts);
+              return;
+            }
           }
         }
         setResult(counts);
@@ -141,6 +159,26 @@ export function DashboardSection({ onNavigate }: DashboardSectionProps) {
           return;
         } catch (fallbackErr) {
           console.error('[Dashboard] Fallback also failed:', fallbackErr);
+          // Last resort: fetch individual counts for each student
+          if (classStudents.length > 0) {
+            console.log('[Dashboard] Trying individual counts as last resort...');
+            const individualCounts: Record<string, number> = {};
+            await Promise.all(
+              classStudents.map(async (s) => {
+                try {
+                  const c = await backendFace.getFaceEnrollmentCount(classId, s.id);
+                  individualCounts[s.id] = c;
+                } catch {
+                  individualCounts[s.id] = 0;
+                }
+              })
+            );
+            console.log('[Dashboard] Last resort individual counts:', individualCounts);
+            if (!cancelled) {
+              setResult(individualCounts);
+            }
+            return;
+          }
           // On error, show empty counts (0 enrolled) instead of loading forever
           if (!cancelled) {
             setFaceCountsFromApi({});
